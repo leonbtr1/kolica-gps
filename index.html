@@ -872,9 +872,19 @@ el.radijus.addEventListener("input", () => {
   prikazi();
 });
 
+// Iz zalijepljenog teksta (npr. cijelog retka iz maila) izvuci sam ključ.
+function ocistiKljuc() {
+  const v = el.kljuc.value.trim();
+  const uuid = v.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+  el.kljuc.value = uuid ? uuid[0] : v;
+}
+
 for (const k of ["kljuc", "skripta"]) {
   el[k].value = spremljeno[k] || "";
-  el[k].addEventListener("change", () => { el[k].value = el[k].value.trim(); spremi(); });
+  el[k].addEventListener("change", () => {
+    if (k === "kljuc") ocistiKljuc(); else el[k].value = el[k].value.trim();
+    spremi();
+  });
 }
 el.skripta.addEventListener("input", prikaziStanjeSkripte);
 prikaziStanjeSkripte();
@@ -895,6 +905,7 @@ el.kopirajKod.addEventListener("click", async () => {
 });
 
 el.testMail.addEventListener("click", async () => {
+  ocistiKljuc();
   spremi();
   const status = (tekst, vrsta = "") => { el.mailStatus.textContent = tekst; el.mailStatus.dataset.vrsta = vrsta; };
   if (!imaSkriptu() && !el.kljuc.value.trim()) {
