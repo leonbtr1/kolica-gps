@@ -171,7 +171,13 @@ details { border-top: 1px solid var(--line); padding-top: 12px; }
 summary { cursor: pointer; font-weight: 600; font-size: 15px; }
 details[open] summary { margin-bottom: 12px; }
 details .polja { display: grid; gap: 12px; }
-details ol { margin: 0; padding-left: 20px; font-size: 13.5px; color: var(--muted); display: grid; gap: 4px; }
+details ol { margin: 0; padding-left: 20px; font-size: 14.5px; display: grid; gap: 8px; }
+.kod {
+  margin: 0; max-height: 240px; overflow: auto;
+  padding: 12px; border-radius: 8px;
+  background: var(--bg); border: 1px solid var(--line);
+  font: 400 12px/1.5 var(--font-mono); white-space: pre;
+}
 code { font-family: var(--font-mono); font-size: 12.5px; background: var(--bg); padding: 1px 4px; border-radius: 4px; }
 
 /* --- Dnevnik --- */
@@ -248,27 +254,55 @@ code { font-family: var(--font-mono); font-size: 12.5px; background: var(--bg); 
     </div>
 
     <div class="polje">
-      <label for="email">E-mail za obavijesti</label>
-      <input type="email" id="email" inputmode="email" autocomplete="email" placeholder="ime@gmail.com">
-      <p class="pomoc">Prvi put stiže mail od FormSubmita s gumbom „Activate Form”. Klikni ga jednom i obavijesti počinju stizati.</p>
+      <label for="skripta">Adresa Google skripte</label>
+      <input type="url" id="skripta" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://script.google.com/macros/s/…/exec">
+      <p class="pomoc">Obavijesti šalje tvoj Gmail, i to tebi. Skriptu postaviš samo jednom, upute su ispod.</p>
     </div>
 
     <button type="button" id="testMail">Pošalji probni mail</button>
     <p class="mail-status" id="mailStatus" role="status"></p>
 
-    <details>
-      <summary>Slanje preko vlastitog Gmaila (EmailJS)</summary>
+    <details id="upute">
+      <summary>Kako postaviti Google skriptu (jednom, oko 3 minute)</summary>
       <div class="polja">
         <ol>
-          <li>Registriraj se na <a href="https://www.emailjs.com" target="_blank" rel="noopener">emailjs.com</a> (besplatno do 200 mailova mjesečno).</li>
-          <li><em>Email Services → Add New Service → Gmail</em>, poveži račun i kopiraj <strong>Service ID</strong>.</li>
-          <li><em>Email Templates → Create New Template</em>: Subject <code>{{naslov}}</code>, Content <code>{{poruka}}</code>, To Email <code>{{primatelj}}</code>. Spremi i kopiraj <strong>Template ID</strong>.</li>
-          <li><em>Account → General</em>: kopiraj <strong>Public Key</strong>.</li>
+          <li>Pritisni <strong>Kopiraj kod skripte</strong> (gumb ispod uputa).</li>
+          <li>Otvori <a href="https://script.new" target="_blank" rel="noopener">script.new</a> i prijavi se Gmailom na koji želiš primati obavijesti. Na mobitelu u Chromeu uključi <em>⋮ → Verzija za računala</em>, inače se editor ne prikazuje dobro.</li>
+          <li>Obriši sve što piše u editoru, zalijepi kod i spremi (ikona diskete).</li>
+          <li>Gore desno <em>Deploy → New deployment</em>. Pokraj <em>Select type</em> pritisni kotačić i odaberi <em>Web app</em>. Postavi <em>Execute as: Me</em> i <em>Who has access: Anyone</em>, pa pritisni <em>Deploy</em>.</li>
+          <li><em>Authorize access</em> → odaberi svoj račun. Google će napisati da aplikacija nije provjerena: pritisni <em>Advanced</em> → <em>Go to … (unsafe)</em> → <em>Allow</em>. To je tvoja vlastita skripta, a upozorenje se pojavljuje samo zato što je Google nije pregledao.</li>
+          <li>Kopiraj <em>Web app URL</em> (završava s <code>/exec</code>), zalijepi ga u polje iznad i pritisni <strong>Pošalji probni mail</strong>.</li>
         </ol>
-        <div class="polje"><label for="ejsService">Service ID</label><input type="text" id="ejsService" autocomplete="off" spellcheck="false" placeholder="service_xxxxxxx"></div>
-        <div class="polje"><label for="ejsTemplate">Template ID</label><input type="text" id="ejsTemplate" autocomplete="off" spellcheck="false" placeholder="template_xxxxxxx"></div>
-        <div class="polje"><label for="ejsKey">Public Key</label><input type="text" id="ejsKey" autocomplete="off" spellcheck="false" placeholder="xxxxxxxxxxxxxxxxx"></div>
-        <p class="pomoc">Kad su sva tri polja ispunjena, mailovi idu preko EmailJS-a umjesto FormSubmita.</p>
+        <button type="button" id="kopirajKod">Kopiraj kod skripte</button>
+        <pre class="kod" id="kodSkripte">
+// Kolica GPS — šalje obavijesti s tvog Gmaila.
+// Mail stiže na Gmail račun koji je objavio ovu skriptu.
+// Želiš li obavijesti na neku drugu adresu, upiši je ovdje:
+var PRIMATELJ = "";
+
+function doPost(e) {
+  try {
+    var p = e ? e.parameter : {};
+    var naslov = String(p.naslov || "Kolica GPS").slice(0, 200);
+    var poruka = String(p.poruka || "").slice(0, 5000);
+    var primatelj = PRIMATELJ || Session.getEffectiveUser().getEmail();
+    MailApp.sendEmail(primatelj, naslov, poruka);
+    return odgovor({ ok: true, primatelj: primatelj });
+  } catch (err) {
+    return odgovor({ ok: false, greska: String(err) });
+  }
+}
+
+// Provjera: otvori adresu skripte u pregledniku, treba pisati "ok": true.
+function doGet() {
+  return odgovor({ ok: true, poruka: "Kolica GPS skripta radi." });
+}
+
+function odgovor(podaci) {
+  return ContentService.createTextOutput(JSON.stringify(podaci))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+</pre>
       </div>
     </details>
   </section>
@@ -355,10 +389,7 @@ function spremi() {
     localStorage.setItem(KLJUC, JSON.stringify({
       radijus: ograda.radijus,
       centar: st.privremeniCentar ? spremljeno.centar : ograda.centar,
-      email: el.email.value.trim(),
-      ejsService: el.ejsService.value.trim(),
-      ejsTemplate: el.ejsTemplate.value.trim(),
-      ejsKey: el.ejsKey.value.trim(),
+      skripta: el.skripta.value.trim(),
     }));
   } catch { /* privatni prozor — postavke vrijede samo do zatvaranja */ }
 }
@@ -368,7 +399,7 @@ const $ = (id) => document.getElementById(id);
 const el = Object.fromEntries([
   "app", "pill", "stanje", "mjera", "udaljenost", "odRadijusa", "detalj", "utisaj", "glavni", "centarOvdje",
   "simulacija", "rZona", "rHist", "rMjera", "rLinija", "rTocnost", "rPuls", "rTocka", "centarInfo",
-  "radijus", "radijusIspis", "email", "testMail", "mailStatus", "ejsService", "ejsTemplate", "ejsKey", "dnevnik",
+  "radijus", "radijusIspis", "skripta", "testMail", "mailStatus", "upute", "kopirajKod", "kodSkripte", "dnevnik",
 ].map((id) => [id, $(id)]));
 
 const spremljeno = ucitajSpremljeno();
@@ -420,61 +451,33 @@ function zapisi(tekst, vrsta = "info") {
 }
 
 // ------------------------------- E-mail ------------------------------
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+// Mail šalje Google skripta s korisnikova vlastitog Gmail računa (google-skripta/Code.gs).
+const SKRIPTA_RE = /^https:\/\/script\.google\.com\/(a\/[^/]+\/)?macros\/s\/[\w-]+\/exec\/?$/;
 
-function koristiEmailJS() {
-  return el.ejsService.value.trim() && el.ejsTemplate.value.trim() && el.ejsKey.value.trim();
-}
-function imaMail() { return EMAIL_RE.test(el.email.value.trim()); }
+function imaSkriptu() { return SKRIPTA_RE.test(el.skripta.value.trim()); }
 
-// Vraća "potvrdeno" ili "bez-potvrde" (zahtjev je otišao, ali preglednik ne smije pročitati odgovor).
+// Vraća adresu na koju je mail poslan.
 async function posaljiMail(naslov, poruka) {
-  const primatelj = el.email.value.trim();
-  if (!EMAIL_RE.test(primatelj)) throw new Error("Upiši ispravnu e-mail adresu u postavkama.");
-  const servis = koristiEmailJS() ? "api.emailjs.com" : "formsubmit.co";
+  const url = el.skripta.value.trim();
+  if (!SKRIPTA_RE.test(url)) {
+    throw new Error("To nije adresa Web appa. Kopiraj „Web app URL” iz Deploy → Manage deployments: " +
+      "počinje s https://script.google.com/macros/s/ i završava s /exec.");
+  }
 
   const kontrola = new AbortController();
-  const timer = setTimeout(() => kontrola.abort(), 20000);
+  const timer = setTimeout(() => kontrola.abort(), 25000);
   try {
-    if (koristiEmailJS()) {
-      const r = await fetch("https://api.emailjs.com/api/v1.0/email/send", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        signal: kontrola.signal,
-        body: JSON.stringify({
-          service_id: el.ejsService.value.trim(),
-          template_id: el.ejsTemplate.value.trim(),
-          user_id: el.ejsKey.value.trim(),
-          template_params: { naslov, poruka, primatelj },
-        }),
-      });
-      if (!r.ok) throw new Error(`EmailJS je odbio slanje (${r.status}): ${(await r.text()).slice(0, 160)}`);
-      return "potvrdeno";
-    }
-
-    // Obična forma (bez JSON-a), pa preglednik ne radi prethodnu CORS provjeru.
-    const url = "https://formsubmit.co/ajax/" + encodeURIComponent(primatelj).replace(/%40/g, "@");
-    const tijelo = () => new URLSearchParams({ _subject: naslov, _template: "box", _captcha: "false", Poruka: poruka });
-    let r;
-    try {
-      r = await fetch(url, { method: "POST", headers: { "Accept": "application/json" }, body: tijelo(), signal: kontrola.signal });
-    } catch (e) {
-      if (e.name === "AbortError" || !navigator.onLine) throw e;
-      // Odgovor nije čitljiv (npr. servis ne šalje CORS zaglavlja): pošalji "naslijepo".
-      await fetch(url, { method: "POST", mode: "no-cors", body: tijelo(), signal: kontrola.signal });
-      return "bez-potvrde";
-    }
-    const d = await r.json().catch(() => ({}));
-    if (String(d.success) === "true") return "potvrdeno";
-    if (/activat/i.test(d.message || "")) {
-      throw new Error("Potrebna je aktivacija: otvori mail od FormSubmita i klikni „Activate Form”, pa pošalji ponovno.");
-    }
-    throw new Error(d.message || `Slanje nije uspjelo (HTTP ${r.status}).`);
+    // Obična forma umjesto JSON-a: Google skripte ne odgovaraju na CORS provjeru koju bi JSON izazvao.
+    const r = await fetch(url, { method: "POST", body: new URLSearchParams({ naslov, poruka }), signal: kontrola.signal });
+    const d = await r.json().catch(() => null);
+    if (!d) throw new Error(`Skripta nije vratila odgovor (HTTP ${r.status}). Provjeri je li objavljena kao Web app.`);
+    if (!d.ok) throw new Error(`Google nije poslao mail: ${d.greska || "nepoznata greška"}`);
+    return d.primatelj || "tvoj Gmail";
   } catch (e) {
-    if (e.name === "AbortError") throw new Error(`${servis} se ne javlja 20 s (slab internet?).`);
+    if (e.name === "AbortError") throw new Error("Google skripta se ne javlja 25 s (slab internet?).");
     if (e instanceof TypeError) {
       throw new Error(navigator.onLine
-        ? `Ne mogu doći do ${servis}. Možda ga blokira blokator oglasa, privatni DNS ili VPN na mobitelu, ili servis trenutno ne radi.`
+        ? "Ne mogu doći do skripte. Provjeri da je objavljena s „Who has access: Anyone” i da adresa završava s /exec."
         : "Mobitel nema internetske veze.");
     }
     throw e;
@@ -485,8 +488,8 @@ async function posaljiMail(naslov, poruka) {
 
 function obavijesti(naslov, poruka) {
   if (st.izvor === "sim") naslov = "[SIMULACIJA] " + naslov;
-  if (!imaMail()) {
-    zapisi("Mail nije poslan jer u postavkama nema e-mail adrese.", "upoz");
+  if (!imaSkriptu()) {
+    zapisi("Mail nije poslan jer u postavkama nije upisana adresa Google skripte.", "upoz");
     return;
   }
   st.red.push({ naslov, poruka, greska: false });
@@ -501,9 +504,9 @@ async function isprazniRed() {
     while (st.red.length) {
       const m = st.red[0];
       try {
-        const ishod = await posaljiMail(m.naslov, m.poruka);
+        const primatelj = await posaljiMail(m.naslov, m.poruka);
         st.red.shift();
-        zapisi(`Mail poslan${ishod === "bez-potvrde" ? " (bez potvrde servisa)" : ""}: ${m.naslov}`, "info");
+        zapisi(`Mail poslan na ${primatelj}: ${m.naslov}`, "info");
       } catch (e) {
         if (!m.greska) zapisi(`Mail čeka slanje. ${e.message}`, "upoz");
         m.greska = true;
@@ -816,28 +819,40 @@ el.radijus.addEventListener("input", () => {
   prikazi();
 });
 
-for (const k of ["email", "ejsService", "ejsTemplate", "ejsKey"]) {
-  el[k].value = spremljeno[k] || "";
-  el[k].addEventListener("change", spremi);
-}
+el.skripta.value = spremljeno.skripta || "";
+el.skripta.addEventListener("change", spremi);
+el.upute.open = !imaSkriptu();
+
+el.kopirajKod.addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText(el.kodSkripte.textContent);
+    el.kopirajKod.textContent = "Kopirano ✓";
+  } catch {
+    const raspon = document.createRange();
+    raspon.selectNodeContents(el.kodSkripte);
+    getSelection().removeAllRanges();
+    getSelection().addRange(raspon);
+    el.kopirajKod.textContent = "Kod je označen, kopiraj ga ručno";
+  }
+  setTimeout(() => { el.kopirajKod.textContent = "Kopiraj kod skripte"; }, 3000);
+});
 
 el.testMail.addEventListener("click", async () => {
   spremi();
   const status = (tekst, vrsta = "") => { el.mailStatus.textContent = tekst; el.mailStatus.dataset.vrsta = vrsta; };
-  if (!imaMail()) { status("Upiši ispravnu e-mail adresu.", "greska"); el.email.focus(); return; }
+  if (!el.skripta.value.trim()) {
+    status("Upiši adresu Google skripte. Upute su ispod.", "greska");
+    el.upute.open = true;
+    el.skripta.focus();
+    return;
+  }
   el.testMail.disabled = true;
   status("Šaljem…");
   try {
-    const ishod = await posaljiMail("Kolica GPS: probni mail",
+    const primatelj = await posaljiMail("Kolica GPS: probni mail",
       `Ako ovo čitaš, obavijesti s kolica stižu na ovu adresu.\n\nPoslano: ${new Date().toLocaleString("hr-HR")}`);
-    if (ishod === "bez-potvrde") {
-      status("Zahtjev je poslan, ali servis nije potvrdio isporuku. Provjeri inbox i Spam: " +
-        "ako je ovo prvo slanje, ondje te čeka mail od FormSubmita s gumbom „Activate Form”.", "ok");
-      zapisi("Probni mail poslan bez potvrde servisa.", "info");
-    } else {
-      status("Poslano. Provjeri inbox, a ako ga nema, i mapu Spam.", "ok");
-      zapisi("Probni mail poslan.", "info");
-    }
+    status(`Poslano na ${primatelj}. Mail stiže za nekoliko sekundi.`, "ok");
+    zapisi(`Probni mail poslan na ${primatelj}.`, "info");
   } catch (e) {
     status(e.message, "greska");
   } finally {

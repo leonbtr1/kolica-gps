@@ -8,7 +8,7 @@ više uzastopnih očitanja, da pojedinačni GPS skokovi ne pale alarm.
 
 | Verzija | Gdje radi | Obavijest |
 |---|---|---|
-| [Web app](#web-app) (`index.html`) | Chrome na mobitelu | e-mail, zvuk, vibracija |
+| [Web app](#web-app) (`index.html`) | Chrome na mobitelu | e-mail s tvog Gmaila, zvuk, vibracija |
 | [Python](mobitel/README.md) (`mobitel/`) | Termux (Android), Pythonista (iPhone) | e-mail preko Gmaila |
 | [ESP32](#esp32) (`kolica_geofence/`) | uređaj ugrađen u kolica | zujalica, SMS (SIM800L) |
 
@@ -19,10 +19,12 @@ više uzastopnih očitanja, da pojedinačni GPS skokovi ne pale alarm.
 **Otvori:** <https://leonbtr1.github.io/kolica-gps/>
 
 1. Otvori adresu u Chromeu na mobitelu.
-2. U *Postavke* upiši svoju e-mail adresu i pritisni **Pošalji probni mail**.
-   Prvi put stiže mail od FormSubmita: klikni **Activate Form**, pa ponovno pošalji probni mail.
-3. Pritisni **Simuliraj šetnju**. Za oko 20 sekundi trebaju stići dva maila s oznakom `[SIMULACIJA]`.
-4. Pravi test: pritisni **Pokreni praćenje** i dopusti lokaciju. Mjesto gdje stojiš postaje centar.
+2. Jednom postavi Google skriptu koja šalje mailove s tvog Gmaila (oko 3 minute).
+   Upute i gumb **Kopiraj kod skripte** su u aplikaciji pod *Postavke*. Kod je i u
+   [`google-skripta/Code.gs`](google-skripta/Code.gs).
+3. Zalijepi adresu skripte (završava s `/exec`) i pritisni **Pošalji probni mail**.
+4. Pritisni **Simuliraj šetnju**. Za oko 20 sekundi trebaju stići dva maila s oznakom `[SIMULACIJA]`.
+5. Pravi test: pritisni **Pokreni praćenje** i dopusti lokaciju. Mjesto gdje stojiš postaje centar.
    Odšetaj dalje od radijusa (zadano 100 m).
 
 Mail stiže nakon 5 uzastopnih očitanja izvan zone (oko 5 s). Dok su kolica vani,
@@ -33,10 +35,12 @@ Ako nema interneta, mail čeka i šalje se čim se veza vrati.
 Stranica sama sprječava gašenje ekrana. Za praćenje sa zaključanim ekranom
 koristi Python verziju u Termuxu ili ESP32 uređaj.
 
-Postavke (e-mail, radijus, centar) spremaju se samo u pregledniku na tvom mobitelu.
+Postavke (adresa skripte, radijus, centar) spremaju se samo u pregledniku na tvom mobitelu.
 
-Slanje ide preko [FormSubmita](https://formsubmit.co), bez registracije. Za slanje preko
-vlastitog Gmaila otvori *Slanje preko vlastitog Gmaila (EmailJS)* u postavkama i prati upute.
+**Zašto Google skripta:** web stranica sama ne može slati mailove. Skripta radi na tvom
+Google računu i šalje mail s tvog Gmaila na isti taj Gmail, bez ikakvog vanjskog servisa.
+Druga adresa primatelja upisuje se u `PRIMATELJ` na vrhu skripte. Google dopušta
+oko 100 mailova dnevno, što je za obavijesti više nego dovoljno.
 
 ---
 
