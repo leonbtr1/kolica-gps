@@ -164,6 +164,7 @@ input[type="email"], input[type="text"] {
 }
 input[type="range"] { width: 100%; accent-color: var(--accent); }
 .pomoc { margin: 0; font-size: 13.5px; color: var(--muted); }
+.pomoc[data-vrsta="greska"] { color: var(--alarm); }
 .mail-status { margin: 0; font-size: 14px; font-weight: 500; min-height: 1.5em; }
 .mail-status[data-vrsta="ok"] { color: var(--ok); }
 .mail-status[data-vrsta="greska"] { color: var(--alarm); }
@@ -307,7 +308,7 @@ function odgovor(podaci) {
         <div class="polje">
           <label for="skripta">Adresa Google skripte</label>
           <input type="url" id="skripta" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://script.google.com/macros/s/…/exec">
-          <p class="pomoc">Ostavi prazno da mailove šalje ntfy.sh.</p>
+          <p class="pomoc" id="skriptaPomoc">Ostavi prazno da mailove šalje ntfy.sh.</p>
         </div>
       </div>
     </details>
@@ -407,7 +408,7 @@ const $ = (id) => document.getElementById(id);
 const el = Object.fromEntries([
   "app", "pill", "stanje", "mjera", "udaljenost", "odRadijusa", "detalj", "utisaj", "glavni", "centarOvdje",
   "simulacija", "rZona", "rHist", "rMjera", "rLinija", "rTocnost", "rPuls", "rTocka", "centarInfo",
-  "radijus", "radijusIspis", "email", "skripta", "testMail", "mailStatus", "upute", "kopirajKod", "kodSkripte", "dnevnik",
+  "radijus", "radijusIspis", "email", "skripta", "skriptaPomoc", "testMail", "mailStatus", "upute", "kopirajKod", "kodSkripte", "dnevnik",
 ].map((id) => [id, $(id)]));
 
 const spremljeno = ucitajSpremljeno();
@@ -465,8 +466,28 @@ function zapisi(tekst, vrsta = "info") {
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const SKRIPTA_RE = /^https:\/\/script\.google\.com\/(a\/[^/]+\/)?macros\/s\/[\w-]+\/exec\/?$/;
 
-function imaSkriptu() { return SKRIPTA_RE.test(el.skripta.value.trim()); }
-function mozeSlati() { return el.skripta.value.trim() ? imaSkriptu() : EMAIL_RE.test(el.email.value.trim()); }
+// Prihvaća cijelu adresu Web appa ili samo ID implementacije (AKfy…); inače null.
+// Neispravna adresa ne blokira slanje: tada mailove šalje ntfy.sh.
+function adresaSkripte() {
+  const v = el.skripta.value.trim();
+  if (SKRIPTA_RE.test(v)) return v;
+  if (/^AKfy[\w-]{20,}$/.test(v)) return `https://script.google.com/macros/s/${v}/exec`;
+  return null;
+}
+function imaSkriptu() { return !!adresaSkripte(); }
+function mozeSlati() { return imaSkriptu() || EMAIL_RE.test(el.email.value.trim()); }
+
+function prikaziStanjeSkripte() {
+  const v = el.skripta.value.trim();
+  let tekst = "Ostavi prazno da mailove šalje ntfy.sh.";
+  if (v && imaSkriptu()) tekst = "Mailovi idu preko ove skripte, s tvog Gmaila.";
+  else if (/\/dev\/?$/.test(v)) tekst = "Ovo je testna adresa (/dev) koja radi samo u tvom pregledniku. " +
+    "Napravi Deploy → New deployment i kopiraj adresu koja završava s /exec. Dok je ne upišeš, mailove šalje ntfy.sh.";
+  else if (v) tekst = "Ovo nije adresa Web appa (počinje s https://script.google.com/macros/s/ i završava s /exec). " +
+    "Dok nije ispravna, mailove šalje ntfy.sh.";
+  el.skriptaPomoc.textContent = tekst;
+  el.skriptaPomoc.dataset.vrsta = v && !imaSkriptu() ? "greska" : "";
+}
 
 // Nasumična tema na ntfy.sh, ista za ovaj mobitel. Tko ne zna ime teme, ne vidi poruke.
 function ntfyTema() {
@@ -496,12 +517,8 @@ async function zahtjev(url, opcije, servis) {
 
 // Vraća adresu na koju je mail poslan.
 async function posaljiMail(naslov, poruka) {
-  const skripta = el.skripta.value.trim();
+  const skripta = adresaSkripte();
   if (skripta) {
-    if (!SKRIPTA_RE.test(skripta)) {
-      throw new Error("To nije adresa Web appa. Kopiraj „Web app URL” iz Deploy → Manage deployments: " +
-        "počinje s https://script.google.com/macros/s/ i završava s /exec.");
-    }
     // Obična forma umjesto JSON-a: Google skripte ne odgovaraju na CORS provjeru koju bi JSON izazvao.
     const r = await zahtjev(skripta, { method: "POST", body: new URLSearchParams({ naslov, poruka }) }, "Google skripte");
     const d = await r.json().catch(() => null);
@@ -861,7 +878,9 @@ for (const k of ["email", "skripta"]) {
   el[k].value = spremljeno[k] || "";
   el[k].addEventListener("change", spremi);
 }
-el.upute.open = !!el.skripta.value.trim();
+el.skripta.addEventListener("input", prikaziStanjeSkripte);
+prikaziStanjeSkripte();
+el.upute.open = imaSkriptu();
 
 el.kopirajKod.addEventListener("click", async () => {
   try {
@@ -880,7 +899,7 @@ el.kopirajKod.addEventListener("click", async () => {
 el.testMail.addEventListener("click", async () => {
   spremi();
   const status = (tekst, vrsta = "") => { el.mailStatus.textContent = tekst; el.mailStatus.dataset.vrsta = vrsta; };
-  if (!el.skripta.value.trim() && !el.email.value.trim()) {
+  if (!imaSkriptu() && !el.email.value.trim()) {
     status("Upiši svoju e-mail adresu.", "greska");
     el.email.focus();
     return;
@@ -888,9 +907,10 @@ el.testMail.addEventListener("click", async () => {
   el.testMail.disabled = true;
   status("Šaljem…");
   try {
+    const preko = imaSkriptu() ? "Google skripte" : "ntfy.sh";
     const primatelj = await posaljiMail("Kolica GPS: probni mail",
       `Ako ovo čitaš, obavijesti s kolica stižu na ovu adresu.\n\nPoslano: ${new Date().toLocaleString("hr-HR")}`);
-    status(`Poslano na ${primatelj}. Mail stiže za nekoliko sekundi.`, "ok");
+    status(`Poslano na ${primatelj} preko ${preko}. Mail stiže za nekoliko sekundi, provjeri i Spam.`, "ok");
     zapisi(`Probni mail poslan na ${primatelj}.`, "info");
   } catch (e) {
     status(e.message, "greska");
