@@ -427,9 +427,11 @@ function koristiEmailJS() {
 }
 function imaMail() { return EMAIL_RE.test(el.email.value.trim()); }
 
+// Vraća "potvrdeno" ili "bez-potvrde" (zahtjev je otišao, ali preglednik ne smije pročitati odgovor).
 async function posaljiMail(naslov, poruka) {
   const primatelj = el.email.value.trim();
   if (!EMAIL_RE.test(primatelj)) throw new Error("Upiši ispravnu e-mail adresu u postavkama.");
+  const servis = koristiEmailJS() ? "api.emailjs.com" : "formsubmit.co";
 
   const kontrola = new AbortController();
   const timer = setTimeout(() => kontrola.abort(), 20000);
@@ -447,24 +449,34 @@ async function posaljiMail(naslov, poruka) {
         }),
       });
       if (!r.ok) throw new Error(`EmailJS je odbio slanje (${r.status}): ${(await r.text()).slice(0, 160)}`);
-      return;
+      return "potvrdeno";
     }
 
-    const r = await fetch("https://formsubmit.co/ajax/" + encodeURIComponent(primatelj).replace(/%40/g, "@"), {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Accept": "application/json" },
-      signal: kontrola.signal,
-      body: JSON.stringify({ _subject: naslov, _template: "box", _captcha: "false", Poruka: poruka }),
-    });
+    // Obična forma (bez JSON-a), pa preglednik ne radi prethodnu CORS provjeru.
+    const url = "https://formsubmit.co/ajax/" + encodeURIComponent(primatelj).replace(/%40/g, "@");
+    const tijelo = () => new URLSearchParams({ _subject: naslov, _template: "box", _captcha: "false", Poruka: poruka });
+    let r;
+    try {
+      r = await fetch(url, { method: "POST", headers: { "Accept": "application/json" }, body: tijelo(), signal: kontrola.signal });
+    } catch (e) {
+      if (e.name === "AbortError" || !navigator.onLine) throw e;
+      // Odgovor nije čitljiv (npr. servis ne šalje CORS zaglavlja): pošalji "naslijepo".
+      await fetch(url, { method: "POST", mode: "no-cors", body: tijelo(), signal: kontrola.signal });
+      return "bez-potvrde";
+    }
     const d = await r.json().catch(() => ({}));
-    if (String(d.success) === "true") return;
+    if (String(d.success) === "true") return "potvrdeno";
     if (/activat/i.test(d.message || "")) {
       throw new Error("Potrebna je aktivacija: otvori mail od FormSubmita i klikni „Activate Form”, pa pošalji ponovno.");
     }
     throw new Error(d.message || `Slanje nije uspjelo (HTTP ${r.status}).`);
   } catch (e) {
-    if (e.name === "AbortError") throw new Error("Nema odgovora poslužitelja (slab internet?).");
-    if (e instanceof TypeError) throw new Error("Nema internetske veze.");
+    if (e.name === "AbortError") throw new Error(`${servis} se ne javlja 20 s (slab internet?).`);
+    if (e instanceof TypeError) {
+      throw new Error(navigator.onLine
+        ? `Ne mogu doći do ${servis}. Možda ga blokira blokator oglasa, privatni DNS ili VPN na mobitelu, ili servis trenutno ne radi.`
+        : "Mobitel nema internetske veze.");
+    }
     throw e;
   } finally {
     clearTimeout(timer);
@@ -489,9 +501,9 @@ async function isprazniRed() {
     while (st.red.length) {
       const m = st.red[0];
       try {
-        await posaljiMail(m.naslov, m.poruka);
+        const ishod = await posaljiMail(m.naslov, m.poruka);
         st.red.shift();
-        zapisi(`Mail poslan: ${m.naslov}`, "info");
+        zapisi(`Mail poslan${ishod === "bez-potvrde" ? " (bez potvrde servisa)" : ""}: ${m.naslov}`, "info");
       } catch (e) {
         if (!m.greska) zapisi(`Mail čeka slanje. ${e.message}`, "upoz");
         m.greska = true;
@@ -816,10 +828,16 @@ el.testMail.addEventListener("click", async () => {
   el.testMail.disabled = true;
   status("Šaljem…");
   try {
-    await posaljiMail("Kolica GPS: probni mail",
+    const ishod = await posaljiMail("Kolica GPS: probni mail",
       `Ako ovo čitaš, obavijesti s kolica stižu na ovu adresu.\n\nPoslano: ${new Date().toLocaleString("hr-HR")}`);
-    status("Poslano. Provjeri inbox, a ako ga nema, i mapu Spam.", "ok");
-    zapisi("Probni mail poslan.", "info");
+    if (ishod === "bez-potvrde") {
+      status("Zahtjev je poslan, ali servis nije potvrdio isporuku. Provjeri inbox i Spam: " +
+        "ako je ovo prvo slanje, ondje te čeka mail od FormSubmita s gumbom „Activate Form”.", "ok");
+      zapisi("Probni mail poslan bez potvrde servisa.", "info");
+    } else {
+      status("Poslano. Provjeri inbox, a ako ga nema, i mapu Spam.", "ok");
+      zapisi("Probni mail poslan.", "info");
+    }
   } catch (e) {
     status(e.message, "greska");
   } finally {
