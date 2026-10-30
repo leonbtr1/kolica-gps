@@ -156,7 +156,7 @@ button:not(:disabled):active { transform: translateY(1px); }
 .polje-red { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
 label { font-weight: 600; font-size: 15px; }
 output { font: 600 20px/1 var(--font-display); font-variant-numeric: tabular-nums; }
-input[type="email"], input[type="text"] {
+input[type="text"], input[type="url"] {
   width: 100%; min-width: 0;
   font: 400 16px/1.2 var(--font-body);
   padding: 12px; border-radius: 8px;
@@ -165,6 +165,7 @@ input[type="email"], input[type="text"] {
 input[type="range"] { width: 100%; accent-color: var(--accent); }
 .pomoc { margin: 0; font-size: 13.5px; color: var(--muted); }
 .pomoc[data-vrsta="greska"] { color: var(--alarm); }
+.koraci { margin: 0; padding-left: 20px; font-size: 14.5px; display: grid; gap: 4px; }
 .mail-status { margin: 0; font-size: 14px; font-weight: 500; min-height: 1.5em; }
 .mail-status[data-vrsta="ok"] { color: var(--ok); }
 .mail-status[data-vrsta="greska"] { color: var(--alarm); }
@@ -255,9 +256,13 @@ code { font-family: var(--font-mono); font-size: 12.5px; background: var(--bg); 
     </div>
 
     <div class="polje">
-      <label for="email">E-mail za obavijesti</label>
-      <input type="email" id="email" inputmode="email" autocomplete="email" placeholder="ime@gmail.com">
-      <p class="pomoc">Mail šalje besplatni servis ntfy.sh, bez registracije. Prvi mail provjeri i u mapi Spam.</p>
+      <label for="kljuc">Ključ za slanje maila</label>
+      <input type="text" id="kljuc" autocomplete="off" spellcheck="false" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx">
+      <ol class="koraci">
+        <li>Otvori <a href="https://web3forms.com" target="_blank" rel="noopener">web3forms.com</a>, upiši svoj e-mail i pritisni <em>Create Access Key</em>.</li>
+        <li>Ključ ti stigne mailom (provjeri i Spam). Kopiraj ga i zalijepi ovdje.</li>
+      </ol>
+      <p class="pomoc">Obavijesti stižu na adresu na koju je stigao ključ. Registracija i lozinka nisu potrebni, besplatno je do 250 mailova mjesečno.</p>
     </div>
 
     <button type="button" id="testMail">Pošalji probni mail</button>
@@ -266,7 +271,7 @@ code { font-family: var(--font-mono); font-size: 12.5px; background: var(--bg); 
     <details id="upute">
       <summary>Ako mailovi ne stižu: slanje s vlastitog Gmaila</summary>
       <div class="polja">
-        <p class="pomoc">Mala Google skripta na tvom računu šalje mailove s tvog Gmaila na isti Gmail. Postavlja se jednom, oko 3 minute. Kad je adresa skripte upisana, mailovi idu preko nje umjesto preko ntfy.sh.</p>
+        <p class="pomoc">Mala Google skripta na tvom računu šalje mailove s tvog Gmaila na isti Gmail. Postavlja se jednom, oko 3 minute. Kad je adresa skripte upisana, mailovi idu preko nje umjesto preko Web3Formsa.</p>
         <ol>
           <li>Pritisni <strong>Kopiraj kod skripte</strong> (gumb ispod uputa).</li>
           <li>Otvori <a href="https://script.new" target="_blank" rel="noopener">script.new</a> i prijavi se Gmailom na koji želiš primati obavijesti. Na mobitelu u Chromeu uključi <em>⋮ → Verzija za računala</em>, inače se editor ne prikazuje dobro.</li>
@@ -308,7 +313,7 @@ function odgovor(podaci) {
         <div class="polje">
           <label for="skripta">Adresa Google skripte</label>
           <input type="url" id="skripta" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://script.google.com/macros/s/…/exec">
-          <p class="pomoc" id="skriptaPomoc">Ostavi prazno da mailove šalje ntfy.sh.</p>
+          <p class="pomoc" id="skriptaPomoc">Ostavi prazno da mailove šalje Web3Forms.</p>
         </div>
       </div>
     </details>
@@ -396,9 +401,8 @@ function spremi() {
     localStorage.setItem(KLJUC, JSON.stringify({
       radijus: ograda.radijus,
       centar: st.privremeniCentar ? spremljeno.centar : ograda.centar,
-      email: el.email.value.trim(),
+      kljuc: el.kljuc.value.trim(),
       skripta: el.skripta.value.trim(),
-      tema: spremljeno.tema,
     }));
   } catch { /* privatni prozor — postavke vrijede samo do zatvaranja */ }
 }
@@ -408,7 +412,7 @@ const $ = (id) => document.getElementById(id);
 const el = Object.fromEntries([
   "app", "pill", "stanje", "mjera", "udaljenost", "odRadijusa", "detalj", "utisaj", "glavni", "centarOvdje",
   "simulacija", "rZona", "rHist", "rMjera", "rLinija", "rTocnost", "rPuls", "rTocka", "centarInfo",
-  "radijus", "radijusIspis", "email", "skripta", "skriptaPomoc", "testMail", "mailStatus", "upute", "kopirajKod", "kodSkripte", "dnevnik",
+  "radijus", "radijusIspis", "kljuc", "skripta", "skriptaPomoc", "testMail", "mailStatus", "upute", "kopirajKod", "kodSkripte", "dnevnik",
 ].map((id) => [id, $(id)]));
 
 const spremljeno = ucitajSpremljeno();
@@ -461,13 +465,13 @@ function zapisi(tekst, vrsta = "info") {
 
 // ------------------------------- E-mail ------------------------------
 // Dva načina slanja:
-//  - ntfy.sh (zadano): dovoljna je e-mail adresa, bez registracije
+//  - Web3Forms (zadano): ključ koji korisnik dobije mailom na web3forms.com; mail ide na tu adresu
 //  - Google skripta (google-skripta/Code.gs): šalje s korisnikova Gmaila, ako je adresa skripte upisana
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const KLJUC_RE = /^[\w-]{20,64}$/;
 const SKRIPTA_RE = /^https:\/\/script\.google\.com\/(a\/[^/]+\/)?macros\/s\/[\w-]+\/exec\/?$/;
 
 // Prihvaća cijelu adresu Web appa ili samo ID implementacije (AKfy…); inače null.
-// Neispravna adresa ne blokira slanje: tada mailove šalje ntfy.sh.
+// Neispravna adresa ne blokira slanje: tada mailove šalje Web3Forms.
 function adresaSkripte() {
   const v = el.skripta.value.trim();
   if (SKRIPTA_RE.test(v)) return v;
@@ -475,28 +479,19 @@ function adresaSkripte() {
   return null;
 }
 function imaSkriptu() { return !!adresaSkripte(); }
-function mozeSlati() { return imaSkriptu() || EMAIL_RE.test(el.email.value.trim()); }
+function imaKljuc() { return KLJUC_RE.test(el.kljuc.value.trim()); }
+function mozeSlati() { return imaSkriptu() || imaKljuc(); }
 
 function prikaziStanjeSkripte() {
   const v = el.skripta.value.trim();
-  let tekst = "Ostavi prazno da mailove šalje ntfy.sh.";
+  let tekst = "Ostavi prazno da mailove šalje Web3Forms.";
   if (v && imaSkriptu()) tekst = "Mailovi idu preko ove skripte, s tvog Gmaila.";
   else if (/\/dev\/?$/.test(v)) tekst = "Ovo je testna adresa (/dev) koja radi samo u tvom pregledniku. " +
-    "Napravi Deploy → New deployment i kopiraj adresu koja završava s /exec. Dok je ne upišeš, mailove šalje ntfy.sh.";
+    "Napravi Deploy → New deployment i kopiraj adresu koja završava s /exec. Dok je ne upišeš, mailove šalje Web3Forms.";
   else if (v) tekst = "Ovo nije adresa Web appa (počinje s https://script.google.com/macros/s/ i završava s /exec). " +
-    "Dok nije ispravna, mailove šalje ntfy.sh.";
+    "Dok nije ispravna, mailove šalje Web3Forms.";
   el.skriptaPomoc.textContent = tekst;
   el.skriptaPomoc.dataset.vrsta = v && !imaSkriptu() ? "greska" : "";
-}
-
-// Nasumična tema na ntfy.sh, ista za ovaj mobitel. Tko ne zna ime teme, ne vidi poruke.
-function ntfyTema() {
-  if (!spremljeno.tema) {
-    const b = crypto.getRandomValues(new Uint8Array(12));
-    spremljeno.tema = "kolica-" + Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
-    spremi();
-  }
-  return spremljeno.tema;
 }
 
 // fetch s vremenskim ograničenjem i razumljivim porukama kad nema veze.
@@ -515,7 +510,7 @@ async function zahtjev(url, opcije, servis) {
   }
 }
 
-// Vraća adresu na koju je mail poslan.
+// Vraća kratki opis kamo i kako je mail poslan, za poruke korisniku.
 async function posaljiMail(naslov, poruka) {
   const skripta = adresaSkripte();
   if (skripta) {
@@ -524,27 +519,30 @@ async function posaljiMail(naslov, poruka) {
     const d = await r.json().catch(() => null);
     if (!d) throw new Error(`Skripta nije vratila odgovor (HTTP ${r.status}). Provjeri je li objavljena kao Web app s pristupom „Anyone”.`);
     if (!d.ok) throw new Error(`Google nije poslao mail: ${d.greska || "nepoznata greška"}`);
-    return d.primatelj || "tvoj Gmail";
+    return `${d.primatelj || "tvoj Gmail"} preko Google skripte`;
   }
 
-  const primatelj = el.email.value.trim();
-  if (!EMAIL_RE.test(primatelj)) throw new Error("Upiši ispravnu e-mail adresu.");
-  // Postavke u adresi, poruka kao običan tekst: preglednik ne radi prethodnu CORS provjeru.
-  const url = `https://ntfy.sh/${ntfyTema()}?` + new URLSearchParams({ email: primatelj, title: naslov });
-  const r = await zahtjev(url, { method: "POST", body: poruka }, "ntfy.sh");
-  if (r.ok) return primatelj;
+  const kljuc = el.kljuc.value.trim();
+  if (!KLJUC_RE.test(kljuc)) throw new Error("Ključ nije ispravan. Kopiraj cijeli Access Key iz maila od Web3Formsa.");
+  // FormData umjesto JSON-a: preglednik ne radi prethodnu CORS provjeru.
+  const forma = new FormData();
+  forma.append("access_key", kljuc);
+  forma.append("subject", naslov);
+  forma.append("from_name", "Kolica GPS");
+  forma.append("message", poruka);
+  const r = await zahtjev("https://api.web3forms.com/submit",
+    { method: "POST", headers: { "Accept": "application/json" }, body: forma }, "Web3Forms");
   const d = await r.json().catch(() => null);
-  const razlog = (d && d.error) || `HTTP ${r.status}`;
-  if (r.status === 429) {
-    throw new Error(`ntfy.sh je privremeno ograničio broj mailova (${razlog}). Mail čeka i šalje se kasnije.`);
-  }
-  throw new Error(`ntfy.sh nije poslao mail: ${razlog}. Ako se ponavlja, postavi slanje s vlastitog Gmaila (ispod).`);
+  if (d && String(d.success) === "true") return "tvoju adresu preko Web3Formsa";
+  const razlog = (d && d.message) || `HTTP ${r.status}`;
+  if (r.status === 429) throw new Error(`Web3Forms je privremeno ograničio slanje (${razlog}). Mail čeka i šalje se kasnije.`);
+  throw new Error(`Web3Forms nije poslao mail: ${razlog}`);
 }
 
 function obavijesti(naslov, poruka) {
   if (st.izvor === "sim") naslov = "[SIMULACIJA] " + naslov;
   if (!mozeSlati()) {
-    zapisi("Mail nije poslan jer u postavkama nema ispravne e-mail adrese.", "upoz");
+    zapisi("Mail nije poslan jer u postavkama nema ključa za slanje maila.", "upoz");
     return;
   }
   st.red.push({ naslov, poruka, greska: false });
@@ -874,9 +872,9 @@ el.radijus.addEventListener("input", () => {
   prikazi();
 });
 
-for (const k of ["email", "skripta"]) {
+for (const k of ["kljuc", "skripta"]) {
   el[k].value = spremljeno[k] || "";
-  el[k].addEventListener("change", spremi);
+  el[k].addEventListener("change", () => { el[k].value = el[k].value.trim(); spremi(); });
 }
 el.skripta.addEventListener("input", prikaziStanjeSkripte);
 prikaziStanjeSkripte();
@@ -899,19 +897,18 @@ el.kopirajKod.addEventListener("click", async () => {
 el.testMail.addEventListener("click", async () => {
   spremi();
   const status = (tekst, vrsta = "") => { el.mailStatus.textContent = tekst; el.mailStatus.dataset.vrsta = vrsta; };
-  if (!imaSkriptu() && !el.email.value.trim()) {
-    status("Upiši svoju e-mail adresu.", "greska");
-    el.email.focus();
+  if (!imaSkriptu() && !el.kljuc.value.trim()) {
+    status("Zalijepi ključ s web3forms.com (upute su ispod polja).", "greska");
+    el.kljuc.focus();
     return;
   }
   el.testMail.disabled = true;
   status("Šaljem…");
   try {
-    const preko = imaSkriptu() ? "Google skripte" : "ntfy.sh";
-    const primatelj = await posaljiMail("Kolica GPS: probni mail",
+    const kamo = await posaljiMail("Kolica GPS: probni mail",
       `Ako ovo čitaš, obavijesti s kolica stižu na ovu adresu.\n\nPoslano: ${new Date().toLocaleString("hr-HR")}`);
-    status(`Poslano na ${primatelj} preko ${preko}. Mail stiže za nekoliko sekundi, provjeri i Spam.`, "ok");
-    zapisi(`Probni mail poslan na ${primatelj}.`, "info");
+    status(`Poslano na ${kamo}. Mail stiže za nekoliko sekundi, provjeri i Spam.`, "ok");
+    zapisi(`Probni mail poslan na ${kamo}.`, "info");
   } catch (e) {
     status(e.message, "greska");
   } finally {

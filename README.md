@@ -19,10 +19,11 @@ više uzastopnih očitanja, da pojedinačni GPS skokovi ne pale alarm.
 **Otvori:** <https://leonbtr1.github.io/kolica-gps/>
 
 1. Otvori adresu u Chromeu na mobitelu.
-2. U *Postavke* upiši svoju e-mail adresu i pritisni **Pošalji probni mail**.
-   Prvi mail provjeri i u mapi Spam.
-3. Pritisni **Simuliraj šetnju**. Za oko 20 sekundi trebaju stići dva maila s oznakom `[SIMULACIJA]`.
-4. Pravi test: pritisni **Pokreni praćenje** i dopusti lokaciju. Mjesto gdje stojiš postaje centar.
+2. Jednom nabavi ključ za slanje: na [web3forms.com](https://web3forms.com) upiši svoj e-mail
+   i pritisni *Create Access Key*. Ključ stigne mailom.
+3. U *Postavke* zalijepi ključ i pritisni **Pošalji probni mail**. Prvi mail provjeri i u mapi Spam.
+4. Pritisni **Simuliraj šetnju**. Za oko 20 sekundi trebaju stići dva maila s oznakom `[SIMULACIJA]`.
+5. Pravi test: pritisni **Pokreni praćenje** i dopusti lokaciju. Mjesto gdje stojiš postaje centar.
    Odšetaj dalje od radijusa (zadano 100 m).
 
 Mail stiže nakon 5 uzastopnih očitanja izvan zone (oko 5 s). Dok su kolica vani,
@@ -33,14 +34,13 @@ Ako nema interneta, mail čeka i šalje se čim se veza vrati.
 Stranica sama sprječava gašenje ekrana. Za praćenje sa zaključanim ekranom
 koristi Python verziju u Termuxu ili ESP32 uređaj.
 
-Postavke (e-mail, radijus, centar) spremaju se samo u pregledniku na tvom mobitelu.
+Postavke (ključ, radijus, centar) spremaju se samo u pregledniku na tvom mobitelu.
 
 **Kako se šalje mail:** web stranica sama ne može slati mailove, pa to radi besplatni
-servis [ntfy.sh](https://ntfy.sh) kojem aplikacija preda poruku i tvoju adresu. Registracija
-nije potrebna. ntfy.sh ograničava broj mailova (otprilike 16 odjednom, zatim jedan na sat),
-što je dovoljno za obavijesti o izlasku i povratku.
+servis [Web3Forms](https://web3forms.com). Ključ dobiješ tako da potvrdiš svoju e-mail adresu,
+bez registracije i lozinke, a mailovi stižu na tu adresu. Besplatno je do 250 mailova mjesečno.
 
-**Ako mailovi preko ntfy.sh ne stižu:** u postavkama otvori *Ako mailovi ne stižu: slanje
+**Ako mailovi preko Web3Formsa ne stižu:** u postavkama otvori *Ako mailovi ne stižu: slanje
 s vlastitog Gmaila*. Mala Google skripta ([`google-skripta/Code.gs`](google-skripta/Code.gs))
 na tvom računu tada šalje mailove s tvog Gmaila na isti Gmail. Postavlja se jednom,
 oko 3 minute, a upute i gumb *Kopiraj kod skripte* su u aplikaciji.
