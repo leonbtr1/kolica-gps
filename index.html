@@ -1,0 +1,833 @@
+<!doctype html>
+<html lang="hr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Kolica GPS</title>
+<meta name="description" content="Prati lokaciju mobitela i šalje e-mail kad kolica izađu iz zadanog radijusa.">
+<meta name="theme-color" content="#0F5C6E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Raspored: jedan stupac za mobitel — stanje, dijagram zone, gumbi, postavke, dnevnik.
+   Izgled instrumenta/prometne signalizacije: uski natpisi, veliki brojevi, boja = stanje. */
+:root {
+  --bg: #EEF2F1;
+  --surface: #FFFFFF;
+  --ink: #142126;
+  --muted: #56686D;
+  --line: #CAD5D5;
+  --accent: #0F5C6E;
+  --accent-ink: #FFFFFF;
+  --ok: #1B7542;
+  --ok-bg: #DCEFE3;
+  --alarm: #C41F29;
+  --alarm-bg: #FADFDF;
+  --alarm-ink: #FFFFFF;
+  --wait: #925F10;
+  --wait-bg: #F6EAD2;
+  --font-display: "Barlow Condensed", "Arial Narrow", system-ui, sans-serif;
+  --font-body: "Barlow", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0C1416; --surface: #142024; --ink: #E2ECEC; --muted: #93A7AA; --line: #2A3B3F;
+    --accent: #5DB9CD; --accent-ink: #062228; --ok: #5CCB8A; --ok-bg: #11301F;
+    --alarm: #FF6E72; --alarm-bg: #3B1517; --alarm-ink: #2A0608; --wait: #E8B657; --wait-bg: #33280F;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0C1416; --surface: #142024; --ink: #E2ECEC; --muted: #93A7AA; --line: #2A3B3F;
+  --accent: #5DB9CD; --accent-ink: #062228; --ok: #5CCB8A; --ok-bg: #11301F;
+  --alarm: #FF6E72; --alarm-bg: #3B1517; --alarm-ink: #2A0608; --wait: #E8B657; --wait-bg: #33280F;
+  color-scheme: dark;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 400 16px/1.5 var(--font-body);
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+
+.app {
+  max-width: 520px;
+  margin: 0 auto;
+  padding-block: 14px 32px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+  --state: var(--muted);
+  --state-bg: var(--surface);
+}
+.app:is([data-stanje="ceka"], [data-stanje="granica"]) { --state: var(--wait); --state-bg: var(--wait-bg); }
+.app[data-stanje="unutra"] { --state: var(--ok);    --state-bg: var(--ok-bg); }
+.app[data-stanje="izvan"]  { --state: var(--alarm); --state-bg: var(--alarm-bg); }
+
+/* --- Zaglavlje --- */
+.top { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.brand { margin: 0; font: 700 24px/1 var(--font-display); letter-spacing: .03em; text-transform: uppercase; }
+.pill {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 6px 11px; border-radius: 999px;
+  background: var(--surface); border: 1px solid var(--line); color: var(--muted);
+  font: 600 12px/1 var(--font-body); letter-spacing: .07em; text-transform: uppercase;
+}
+.pill::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--line); }
+.app[data-izvor="gps"] .pill::before { background: var(--ok); }
+.app[data-izvor="sim"] .pill::before { background: var(--wait); }
+
+/* --- Stanje --- */
+.status {
+  background: var(--state-bg);
+  border: 1px solid var(--line);
+  border-color: color-mix(in srgb, var(--state) 40%, transparent);
+  border-radius: 14px;
+  padding: 18px;
+  display: grid;
+  gap: 8px;
+}
+.stanje {
+  margin: 0;
+  font: 700 clamp(30px, 9.5vw, 46px)/.95 var(--font-display);
+  text-transform: uppercase; letter-spacing: .015em;
+  color: var(--state);
+  text-wrap: balance;
+}
+.mjera { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; font-variant-numeric: tabular-nums; }
+.mjera .broj { font: 600 clamp(60px, 21vw, 88px)/.9 var(--font-display); }
+.mjera .jed { font: 600 26px/1 var(--font-display); }
+.mjera .od { color: var(--muted); font-size: 16px; }
+.detalj { margin: 0; color: var(--muted); font-size: 14px; }
+.detalj strong { color: var(--ink); font-weight: 600; }
+
+/* --- Dijagram zone --- */
+.zona { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 14px; display: grid; gap: 10px; }
+.zona svg { width: 100%; max-width: 330px; aspect-ratio: 1; margin: 0 auto; display: block; }
+.r-podloga { fill: var(--bg); }
+.r-zona { fill: var(--state); fill-opacity: .12; stroke: var(--state); stroke-width: 2.5; }
+.r-hist { fill: none; stroke: var(--state); stroke-width: 1.2; stroke-dasharray: 4 5; opacity: .7; }
+.r-os { stroke: var(--line); stroke-width: 1; }
+.r-tekst { fill: var(--muted); font: 600 12px var(--font-body); letter-spacing: .06em; }
+.r-linija { stroke: var(--ink); stroke-width: 1.5; stroke-dasharray: 2 4; opacity: .55; }
+.r-tocnost { fill: var(--ink); fill-opacity: .1; stroke: none; }
+.r-tocka { fill: var(--ink); stroke: var(--surface); stroke-width: 3; }
+.r-puls { fill: none; stroke: var(--alarm); stroke-width: 2; opacity: 0; transform-box: fill-box; transform-origin: center; }
+.app[data-stanje="izvan"] .r-puls { animation: puls 1.3s ease-out infinite; }
+.app[data-stanje="izvan"] .r-tocka { fill: var(--alarm); }
+.r-centar { fill: var(--state); }
+@keyframes puls { 0% { opacity: .9; transform: scale(1); } 100% { opacity: 0; transform: scale(3.2); } }
+.legenda { margin: 0; font-size: 13px; color: var(--muted); text-align: center; text-wrap: balance; }
+.centar-info { margin: 0; font-size: 14px; display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 10px; }
+.mono { font-family: var(--font-mono); font-size: 13px; font-variant-numeric: tabular-nums; }
+a { color: var(--accent); font-weight: 600; }
+
+/* --- Gumbi --- */
+button {
+  font: 600 16px/1.1 var(--font-body);
+  min-height: 48px; padding: 12px 14px;
+  border-radius: 10px; border: 1px solid var(--line);
+  background: var(--surface); color: var(--ink);
+  cursor: pointer;
+}
+button:disabled { opacity: .45; cursor: not-allowed; }
+button:not(:disabled):active { transform: translateY(1px); }
+:is(button, input, summary, a):focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.btn-glavni { width: 100%; min-height: 58px; font-size: 19px; background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.btn-glavni.stop { background: var(--ink); border-color: var(--ink); color: var(--bg); }
+.btn-alarm { background: var(--alarm); border-color: var(--alarm); color: var(--alarm-ink); width: 100%; }
+.gumbi { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+/* --- Kartice --- */
+.kartica { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 16px; display: grid; gap: 14px; }
+.kartica h2 { margin: 0; font: 600 15px/1.2 var(--font-display); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.polje { display: grid; gap: 6px; min-width: 0; }
+.polje-red { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+label { font-weight: 600; font-size: 15px; }
+output { font: 600 20px/1 var(--font-display); font-variant-numeric: tabular-nums; }
+input[type="email"], input[type="text"] {
+  width: 100%; min-width: 0;
+  font: 400 16px/1.2 var(--font-body);
+  padding: 12px; border-radius: 8px;
+  border: 1px solid var(--line); background: var(--bg); color: var(--ink);
+}
+input[type="range"] { width: 100%; accent-color: var(--accent); }
+.pomoc { margin: 0; font-size: 13.5px; color: var(--muted); }
+.mail-status { margin: 0; font-size: 14px; font-weight: 500; min-height: 1.5em; }
+.mail-status[data-vrsta="ok"] { color: var(--ok); }
+.mail-status[data-vrsta="greska"] { color: var(--alarm); }
+details { border-top: 1px solid var(--line); padding-top: 12px; }
+summary { cursor: pointer; font-weight: 600; font-size: 15px; }
+details[open] summary { margin-bottom: 12px; }
+details .polja { display: grid; gap: 12px; }
+details ol { margin: 0; padding-left: 20px; font-size: 13.5px; color: var(--muted); display: grid; gap: 4px; }
+code { font-family: var(--font-mono); font-size: 12.5px; background: var(--bg); padding: 1px 4px; border-radius: 4px; }
+
+/* --- Dnevnik --- */
+.dnevnik { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; max-height: 340px; overflow-y: auto; }
+.dnevnik li { display: grid; grid-template-columns: auto 1fr; gap: 10px; font-size: 14px; line-height: 1.4; }
+.dnevnik time { font: 400 12.5px/1.6 var(--font-mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.dnevnik span { min-width: 0; overflow-wrap: anywhere; }
+.dnevnik li[data-vrsta="alarm"] span { color: var(--alarm); font-weight: 600; }
+.dnevnik li[data-vrsta="ok"] span { color: var(--ok); font-weight: 600; }
+.dnevnik li[data-vrsta="upoz"] span { color: var(--wait); }
+.dnevnik .prazno { color: var(--muted); display: block; }
+
+.napomena { margin: 0; font-size: 13.5px; color: var(--muted); }
+
+@media (prefers-reduced-motion: reduce) {
+  .app[data-stanje="izvan"] .r-puls { animation: none; }
+  button:not(:disabled):active { transform: none; }
+}
+</style>
+</head>
+<body>
+<main class="app" id="app" data-stanje="stop">
+
+  <header class="top">
+    <h1 class="brand">Kolica GPS</h1>
+    <span class="pill" id="pill">GPS isključen</span>
+  </header>
+
+  <section class="status" aria-live="polite">
+    <p class="stanje" id="stanje">Zaustavljeno</p>
+    <div class="mjera" id="mjera" hidden>
+      <span><span class="broj" id="udaljenost">—</span> <span class="jed">m</span></span>
+      <span class="od" id="odRadijusa">od centra · dopušteno 100 m</span>
+    </div>
+    <p class="detalj" id="detalj">Pritisni „Pokreni praćenje”. Prvo ispravno očitanje postaje centar zone.</p>
+    <button type="button" class="btn-alarm" id="utisaj" hidden>Utišaj alarm</button>
+  </section>
+
+  <button type="button" class="btn-glavni" id="glavni">Pokreni praćenje</button>
+  <div class="gumbi">
+    <button type="button" id="centarOvdje" disabled>Postavi centar ovdje</button>
+    <button type="button" id="simulacija">Simuliraj šetnju</button>
+  </div>
+
+  <section class="zona" aria-label="Zona">
+    <svg viewBox="-160 -160 320 320" role="img" aria-label="Položaj kolica u odnosu na zonu">
+      <circle class="r-podloga" r="150"/>
+      <line class="r-os" x1="-150" y1="0" x2="150" y2="0"/>
+      <line class="r-os" x1="0" y1="-150" x2="0" y2="150"/>
+      <circle class="r-zona" id="rZona" r="100"/>
+      <circle class="r-hist" id="rHist" r="90"/>
+      <text class="r-tekst" x="0" y="-136" text-anchor="middle">S</text>
+      <text class="r-tekst" id="rMjera" x="6" y="-104">100 m</text>
+      <line class="r-linija" id="rLinija" x1="0" y1="0" x2="0" y2="0"/>
+      <circle class="r-tocnost" id="rTocnost" r="0"/>
+      <circle class="r-puls" id="rPuls" r="7"/>
+      <circle class="r-tocka" id="rTocka" r="7" visibility="hidden"/>
+      <circle class="r-centar" r="4"/>
+    </svg>
+    <p class="legenda">Puna crta je granica zone. Povratak se priznaje tek unutar isprekidane crte.</p>
+    <p class="centar-info" id="centarInfo">Centar još nije postavljen.</p>
+  </section>
+
+  <section class="kartica" aria-labelledby="hPostavke">
+    <h2 id="hPostavke">Postavke</h2>
+
+    <div class="polje">
+      <div class="polje-red">
+        <label for="radijus">Dopušteni radijus</label>
+        <output id="radijusIspis" for="radijus">100 m</output>
+      </div>
+      <input type="range" id="radijus" min="30" max="500" step="10" value="100">
+      <p class="pomoc">GPS griješi nekoliko metara, pa radijus ispod 30 m daje lažne alarme.</p>
+    </div>
+
+    <div class="polje">
+      <label for="email">E-mail za obavijesti</label>
+      <input type="email" id="email" inputmode="email" autocomplete="email" placeholder="ime@gmail.com">
+      <p class="pomoc">Prvi put stiže mail od FormSubmita s gumbom „Activate Form”. Klikni ga jednom i obavijesti počinju stizati.</p>
+    </div>
+
+    <button type="button" id="testMail">Pošalji probni mail</button>
+    <p class="mail-status" id="mailStatus" role="status"></p>
+
+    <details>
+      <summary>Slanje preko vlastitog Gmaila (EmailJS)</summary>
+      <div class="polja">
+        <ol>
+          <li>Registriraj se na <a href="https://www.emailjs.com" target="_blank" rel="noopener">emailjs.com</a> (besplatno do 200 mailova mjesečno).</li>
+          <li><em>Email Services → Add New Service → Gmail</em>, poveži račun i kopiraj <strong>Service ID</strong>.</li>
+          <li><em>Email Templates → Create New Template</em>: Subject <code>{{naslov}}</code>, Content <code>{{poruka}}</code>, To Email <code>{{primatelj}}</code>. Spremi i kopiraj <strong>Template ID</strong>.</li>
+          <li><em>Account → General</em>: kopiraj <strong>Public Key</strong>.</li>
+        </ol>
+        <div class="polje"><label for="ejsService">Service ID</label><input type="text" id="ejsService" autocomplete="off" spellcheck="false" placeholder="service_xxxxxxx"></div>
+        <div class="polje"><label for="ejsTemplate">Template ID</label><input type="text" id="ejsTemplate" autocomplete="off" spellcheck="false" placeholder="template_xxxxxxx"></div>
+        <div class="polje"><label for="ejsKey">Public Key</label><input type="text" id="ejsKey" autocomplete="off" spellcheck="false" placeholder="xxxxxxxxxxxxxxxxx"></div>
+        <p class="pomoc">Kad su sva tri polja ispunjena, mailovi idu preko EmailJS-a umjesto FormSubmita.</p>
+      </div>
+    </details>
+  </section>
+
+  <section class="kartica" aria-labelledby="hDnevnik">
+    <h2 id="hDnevnik">Dnevnik</h2>
+    <ol class="dnevnik" id="dnevnik"><li><span class="prazno">Ovdje se bilježe izlasci, povratci i poslani mailovi.</span></li></ol>
+  </section>
+
+  <p class="napomena">Drži ekran upaljen i ovu stranicu otvorenu: kad je ekran ugašen ili je stranica u pozadini, preglednik ne daje lokaciju. Stranica sama sprječava gašenje ekrana dok praćenje radi. U Chromeu je možeš dodati na početni zaslon (izbornik ⋮ → Dodaj na početni zaslon).</p>
+</main>
+
+<script>
+"use strict";
+
+// ============================ POSTAVKE ===============================
+const HISTEREZA_M = 10;          // povratak se priznaje tek na radijus - histereza
+const BROJ_POTVRDA = 5;          // uzastopnih očitanja za promjenu stanja (~5 s)
+const MAX_NETOCNOST_M = 30;      // očitanja lošije točnosti se preskaču
+const PONAVLJANJE_MS = 5 * 60 * 1000;   // dok su kolica vani, novi mail svakih 5 min
+const PONOVNI_POKUSAJ_MS = 30 * 1000;   // neposlani mail pokušaj ponovno nakon 30 s
+const ZADANI_CENTAR = { lat: 45.815011, lon: 15.981919 };  // za simulaciju bez centra
+// =====================================================================
+
+const R_ZEMLJE = 6371000;
+const rad = (st) => st * Math.PI / 180;
+
+// Udaljenost između dvije GPS točke u metrima (Haversine formula).
+function udaljenostM(lat1, lon1, lat2, lon2) {
+  const dLat = rad(lat2 - lat1), dLon = rad(lon2 - lon1);
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(rad(lat1)) * Math.cos(rad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return R_ZEMLJE * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+// Pomak od centra u metrima (istok, sjever) — za crtanje dijagrama.
+function pomakM(c, lat, lon) {
+  return { x: rad(lon - c.lon) * R_ZEMLJE * Math.cos(rad(c.lat)), y: rad(lat - c.lat) * R_ZEMLJE };
+}
+
+// Ista logika kao geofence.py / geofence.h.
+class Ograda {
+  constructor(radijus, histereza, potvrde) {
+    this.radijus = radijus;
+    this.histereza = histereza;
+    this.potvrde = potvrde;
+    this.centar = null;
+    this.udaljenost = null;
+    this.reset();
+  }
+  postaviCentar(lat, lon) { this.centar = { lat, lon }; this.udaljenost = null; this.reset(); }
+  reset() { this.stanje = "nepoznato"; this.kandidat = null; this.brojac = 0; }
+
+  // Vraća "izasla", "vratila" ili null.
+  azuriraj(lat, lon) {
+    if (!this.centar) return null;
+    const d = udaljenostM(this.centar.lat, this.centar.lon, lat, lon);
+    this.udaljenost = d;
+
+    const k = this.stanje === "izvan"
+      ? (d <= this.radijus - this.histereza ? "unutra" : "izvan")
+      : (d > this.radijus ? "izvan" : "unutra");
+
+    if (k === this.stanje) { this.brojac = 0; return null; }
+    if (k !== this.kandidat) { this.kandidat = k; this.brojac = 0; }
+    if (++this.brojac < this.potvrde) return null;
+
+    const prije = this.stanje;
+    this.stanje = k;
+    this.kandidat = null;
+    this.brojac = 0;
+    if (k === "izvan") return "izasla";
+    if (prije === "izvan") return "vratila";
+    return null;
+  }
+}
+
+// ---------------------------- Spremanje ------------------------------
+const KLJUC = "kolica-gps-v1";
+function ucitajSpremljeno() {
+  try { return JSON.parse(localStorage.getItem(KLJUC)) || {}; } catch { return {}; }
+}
+function spremi() {
+  try {
+    localStorage.setItem(KLJUC, JSON.stringify({
+      radijus: ograda.radijus,
+      centar: st.privremeniCentar ? spremljeno.centar : ograda.centar,
+      email: el.email.value.trim(),
+      ejsService: el.ejsService.value.trim(),
+      ejsTemplate: el.ejsTemplate.value.trim(),
+      ejsKey: el.ejsKey.value.trim(),
+    }));
+  } catch { /* privatni prozor — postavke vrijede samo do zatvaranja */ }
+}
+
+// ------------------------------ Stanje -------------------------------
+const $ = (id) => document.getElementById(id);
+const el = Object.fromEntries([
+  "app", "pill", "stanje", "mjera", "udaljenost", "odRadijusa", "detalj", "utisaj", "glavni", "centarOvdje",
+  "simulacija", "rZona", "rHist", "rMjera", "rLinija", "rTocnost", "rPuls", "rTocka", "centarInfo",
+  "radijus", "radijusIspis", "email", "testMail", "mailStatus", "ejsService", "ejsTemplate", "ejsKey", "dnevnik",
+].map((id) => [id, $(id)]));
+
+const spremljeno = ucitajSpremljeno();
+const ograda = new Ograda(spremljeno.radijus || 100, HISTEREZA_M, BROJ_POTVRDA);
+if (spremljeno.centar) ograda.postaviCentar(spremljeno.centar.lat, spremljeno.centar.lon);
+
+const st = {
+  izvor: null,            // "gps" | "sim" | null
+  watchId: null,
+  simTimer: null,
+  zadnje: null,           // zadnje očitanje {lat, lon, tocnost, vrijeme}
+  slabSignal: false,
+  alarm: false,
+  utisan: false,
+  zadnjaObavijest: 0,
+  red: [],                // mailovi koji čekaju slanje
+  saljem: false,
+  wakeLock: null,
+  audio: null,
+  skrivenoOd: null,
+  privremeniCentar: false,
+};
+const dnevnikZapisi = [];
+
+// ------------------------------ Dnevnik ------------------------------
+function vrijeme(t = Date.now()) {
+  return new Date(t).toLocaleTimeString("hr-HR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+}
+
+function zapisi(tekst, vrsta = "info") {
+  const zadnji = dnevnikZapisi[0];
+  if (zadnji && zadnji.tekst === tekst) {   // isto upozorenje se ne ponavlja u nedogled
+    zadnji.puta++;
+    zadnji.t = Date.now();
+  } else {
+    dnevnikZapisi.unshift({ t: Date.now(), tekst, vrsta, puta: 1 });
+    dnevnikZapisi.length = Math.min(dnevnikZapisi.length, 60);
+  }
+  el.dnevnik.replaceChildren(...dnevnikZapisi.map((z) => {
+    const li = document.createElement("li");
+    li.dataset.vrsta = z.vrsta;
+    const time = document.createElement("time");
+    time.textContent = vrijeme(z.t);
+    const span = document.createElement("span");
+    span.textContent = z.puta > 1 ? `${z.tekst} (×${z.puta})` : z.tekst;
+    li.append(time, span);
+    return li;
+  }));
+}
+
+// ------------------------------- E-mail ------------------------------
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function koristiEmailJS() {
+  return el.ejsService.value.trim() && el.ejsTemplate.value.trim() && el.ejsKey.value.trim();
+}
+function imaMail() { return EMAIL_RE.test(el.email.value.trim()); }
+
+async function posaljiMail(naslov, poruka) {
+  const primatelj = el.email.value.trim();
+  if (!EMAIL_RE.test(primatelj)) throw new Error("Upiši ispravnu e-mail adresu u postavkama.");
+
+  const kontrola = new AbortController();
+  const timer = setTimeout(() => kontrola.abort(), 20000);
+  try {
+    if (koristiEmailJS()) {
+      const r = await fetch("https://api.emailjs.com/api/v1.0/email/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal: kontrola.signal,
+        body: JSON.stringify({
+          service_id: el.ejsService.value.trim(),
+          template_id: el.ejsTemplate.value.trim(),
+          user_id: el.ejsKey.value.trim(),
+          template_params: { naslov, poruka, primatelj },
+        }),
+      });
+      if (!r.ok) throw new Error(`EmailJS je odbio slanje (${r.status}): ${(await r.text()).slice(0, 160)}`);
+      return;
+    }
+
+    const r = await fetch("https://formsubmit.co/ajax/" + encodeURIComponent(primatelj).replace(/%40/g, "@"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Accept": "application/json" },
+      signal: kontrola.signal,
+      body: JSON.stringify({ _subject: naslov, _template: "box", _captcha: "false", Poruka: poruka }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (String(d.success) === "true") return;
+    if (/activat/i.test(d.message || "")) {
+      throw new Error("Potrebna je aktivacija: otvori mail od FormSubmita i klikni „Activate Form”, pa pošalji ponovno.");
+    }
+    throw new Error(d.message || `Slanje nije uspjelo (HTTP ${r.status}).`);
+  } catch (e) {
+    if (e.name === "AbortError") throw new Error("Nema odgovora poslužitelja (slab internet?).");
+    if (e instanceof TypeError) throw new Error("Nema internetske veze.");
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function obavijesti(naslov, poruka) {
+  if (st.izvor === "sim") naslov = "[SIMULACIJA] " + naslov;
+  if (!imaMail()) {
+    zapisi("Mail nije poslan jer u postavkama nema e-mail adrese.", "upoz");
+    return;
+  }
+  st.red.push({ naslov, poruka, greska: false });
+  isprazniRed();
+}
+
+// Šalje mailove redom; ako nema interneta, ostaju u redu za kasnije.
+async function isprazniRed() {
+  if (st.saljem) return;
+  st.saljem = true;
+  try {
+    while (st.red.length) {
+      const m = st.red[0];
+      try {
+        await posaljiMail(m.naslov, m.poruka);
+        st.red.shift();
+        zapisi(`Mail poslan: ${m.naslov}`, "info");
+      } catch (e) {
+        if (!m.greska) zapisi(`Mail čeka slanje. ${e.message}`, "upoz");
+        m.greska = true;
+        break;
+      }
+    }
+  } finally {
+    st.saljem = false;
+  }
+}
+setInterval(() => { if (st.red.length) isprazniRed(); }, PONOVNI_POKUSAJ_MS);
+window.addEventListener("online", () => { if (st.red.length) isprazniRed(); });
+
+function opisLokacije(lat, lon, tocnost) {
+  return [
+    `Vrijeme: ${new Date().toLocaleString("hr-HR")}`,
+    `Udaljenost od centra: ${Math.round(ograda.udaljenost)} m (dopušteno ${ograda.radijus} m)`,
+    `Točnost GPS-a: ±${Math.round(tocnost)} m`,
+    `Lokacija: https://maps.google.com/?q=${lat.toFixed(6)},${lon.toFixed(6)}`,
+  ].join("\n");
+}
+
+// ------------------------------- Alarm -------------------------------
+function pripremiZvuk() {
+  try {
+    st.audio = st.audio || new (window.AudioContext || window.webkitAudioContext)();
+    st.audio.resume();
+  } catch { st.audio = null; }
+}
+
+function pisak() {
+  const ctx = st.audio;
+  if (!ctx) return;
+  const t = ctx.currentTime;
+  const osc = ctx.createOscillator();
+  const g = ctx.createGain();
+  osc.type = "square";
+  osc.frequency.value = 1040;
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(0.25, t + 0.01);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.28);
+  osc.connect(g).connect(ctx.destination);
+  osc.start(t);
+  osc.stop(t + 0.3);
+}
+
+setInterval(() => {
+  if (!st.alarm || st.utisan) return;
+  pisak();
+  if (navigator.vibrate) navigator.vibrate([250, 120, 250]);
+}, 1500);
+
+// ---------------------------- Ekran budan ----------------------------
+async function drziEkranBudnim() {
+  try {
+    if ("wakeLock" in navigator && document.visibilityState === "visible" && !st.wakeLock) {
+      st.wakeLock = await navigator.wakeLock.request("screen");
+      st.wakeLock.addEventListener("release", () => { st.wakeLock = null; });
+    }
+  } catch { /* nije dopušteno — korisnik mora sam držati ekran upaljen */ }
+}
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") {
+    if (st.izvor === "gps") st.skrivenoOd = Date.now();
+    return;
+  }
+  if (st.izvor) drziEkranBudnim();
+  if (st.skrivenoOd) {
+    const s = Math.round((Date.now() - st.skrivenoOd) / 1000);
+    if (s >= 10) zapisi(`Stranica je bila u pozadini ${s} s i za to vrijeme lokacija nije praćena.`, "upoz");
+    st.skrivenoOd = null;
+  }
+});
+
+// ---------------------------- Očitanja -------------------------------
+function postaviCentar(lat, lon, razlog) {
+  ograda.postaviCentar(lat, lon);
+  st.alarm = false;
+  st.privremeniCentar = razlog === "simulacija";
+  if (!st.privremeniCentar) {
+    spremljeno.centar = { lat, lon };
+    spremi();
+  }
+  zapisi(`Centar postavljen (${razlog}): ${lat.toFixed(5)}, ${lon.toFixed(5)}`, "info");
+}
+
+function obradiOcitanje(lat, lon, tocnost) {
+  st.zadnje = { lat, lon, tocnost, vrijeme: Date.now() };
+  st.slabSignal = tocnost > MAX_NETOCNOST_M;
+  if (st.slabSignal) { prikazi(); return; }
+
+  if (!ograda.centar) {
+    postaviCentar(lat, lon, "prvo ispravno očitanje");
+    prikazi();
+    return;
+  }
+
+  const dogadaj = ograda.azuriraj(lat, lon);
+  const sada = Date.now();
+
+  if (dogadaj === "izasla") {
+    st.alarm = true;
+    st.utisan = false;
+    st.zadnjaObavijest = sada;
+    zapisi(`Kolica su izašla iz zone (${Math.round(ograda.udaljenost)} m od centra).`, "alarm");
+    obavijesti("UPOZORENJE: kolica su izašla iz zone", opisLokacije(lat, lon, tocnost));
+  } else if (dogadaj === "vratila") {
+    st.alarm = false;
+    zapisi(`Kolica su se vratila u zonu (${Math.round(ograda.udaljenost)} m od centra).`, "ok");
+    obavijesti("Kolica su se vratila u zonu", opisLokacije(lat, lon, tocnost));
+  } else if (ograda.stanje === "izvan" && sada - st.zadnjaObavijest >= PONAVLJANJE_MS) {
+    st.zadnjaObavijest = sada;
+    obavijesti("Kolica su i dalje izvan zone", opisLokacije(lat, lon, tocnost));
+  }
+  prikazi();
+}
+
+const GPS_GRESKE = {
+  1: "Pristup lokaciji je odbijen. Dopusti lokaciju za ovu stranicu (ikona lokota pokraj adrese → Dopuštenja).",
+  2: "Lokacija trenutno nije dostupna. Uključi lokaciju na mobitelu ili izađi na otvoreno.",
+  3: "GPS se još ne javlja. Ako si u zatvorenom, izađi na otvoreno.",
+};
+
+function pokreniGps() {
+  if (!("geolocation" in navigator)) { zapisi("Ovaj preglednik ne podržava lokaciju.", "upoz"); return; }
+  if (!window.isSecureContext) { zapisi("Lokacija radi samo kad je stranica otvorena preko https:// adrese.", "upoz"); return; }
+  zaustavi(true);
+  pripremiZvuk();
+  drziEkranBudnim();
+  st.izvor = "gps";
+  st.watchId = navigator.geolocation.watchPosition(
+    (p) => obradiOcitanje(p.coords.latitude, p.coords.longitude, p.coords.accuracy),
+    (e) => {
+      // Kratki prekidi su normalni; javi tek kad GPS stvarno utihne.
+      const nedavno = st.zadnje && Date.now() - st.zadnje.vrijeme < 15000;
+      if (e.code === 1 || !nedavno) zapisi(GPS_GRESKE[e.code] || e.message, "upoz");
+      if (e.code === 1) zaustavi();
+      prikazi();
+    },
+    { enableHighAccuracy: true, maximumAge: 0, timeout: 30000 },
+  );
+  zapisi("Praćenje pokrenuto.", "info");
+  prikazi();
+}
+
+// Izmišljena šetnja: od centra 210 m prema sjeveroistoku i natrag.
+function pokreniSimulaciju() {
+  zaustavi(true);
+  pripremiZvuk();
+  drziEkranBudnim();
+  if (!ograda.centar) {
+    const c = st.zadnje && !st.slabSignal ? st.zadnje : ZADANI_CENTAR;
+    postaviCentar(c.lat, c.lon, "simulacija");
+  } else {
+    ograda.reset();
+  }
+  const c = ograda.centar;
+  const put = [
+    ...Array(6).fill(0), 35, 70, 105, 140, 175, 210, ...Array(5).fill(210),
+    175, 140, 105, 70, 35, ...Array(6).fill(0),
+  ];
+  const smjer = rad(40);
+  const tocke = put.map((d) => ({
+    lat: c.lat + (d * Math.cos(smjer)) / R_ZEMLJE * 180 / Math.PI,
+    lon: c.lon + (d * Math.sin(smjer)) / (R_ZEMLJE * Math.cos(rad(c.lat))) * 180 / Math.PI,
+  }));
+
+  st.izvor = "sim";
+  zapisi("Simulacija: šetnja do 210 m i natrag (oko 20 s).", "info");
+  let i = 0;
+  st.simTimer = setInterval(() => {
+    if (i >= tocke.length) {
+      zapisi("Simulacija je gotova.", "info");
+      zaustavi(true);
+      return;
+    }
+    obradiOcitanje(tocke[i].lat, tocke[i].lon, 5);
+    i++;
+  }, 700);
+  prikazi();
+}
+
+function zaustavi(tiho = false) {
+  if (st.watchId != null) navigator.geolocation.clearWatch(st.watchId);
+  clearInterval(st.simTimer);
+  const bio = st.izvor;
+  st.watchId = null;
+  st.simTimer = null;
+  st.izvor = null;
+  st.alarm = false;
+  st.slabSignal = false;
+  ograda.reset();
+  if (st.privremeniCentar) {
+    ograda.centar = null;
+    st.privremeniCentar = false;
+  }
+  if (st.wakeLock) { st.wakeLock.release().catch(() => {}); st.wakeLock = null; }
+  if (bio === "gps" && !tiho) zapisi("Praćenje zaustavljeno.", "info");
+  if (bio === "sim" && !tiho) zapisi("Simulacija zaustavljena.", "info");
+  prikazi();
+}
+
+// ------------------------------ Prikaz -------------------------------
+const NAZIV = { stop: "Zaustavljeno", ceka: "Provjeravam", granica: "Na granici", unutra: "Unutar zone", izvan: "Izvan zone!" };
+const PIL = { gps: "GPS aktivan", sim: "Simulacija" };
+
+function prikazi() {
+  const stanje = !st.izvor ? "stop"
+    : ograda.stanje === "izvan" ? "izvan"
+    : ograda.stanje === "unutra" ? (ograda.kandidat === "izvan" ? "granica" : "unutra")
+    : "ceka";
+
+  el.app.dataset.stanje = stanje;
+  if (st.izvor) el.app.dataset.izvor = st.izvor; else delete el.app.dataset.izvor;
+  el.pill.textContent = PIL[st.izvor] || "GPS isključen";
+  el.stanje.textContent = NAZIV[stanje];
+
+  const d = st.izvor && ograda.udaljenost != null ? ograda.udaljenost : null;
+  el.mjera.hidden = d == null;
+  if (d != null) el.udaljenost.textContent = Math.round(d);
+  el.odRadijusa.textContent = `od centra · dopušteno ${ograda.radijus} m`;
+
+  // Redak s detaljima
+  let detalj;
+  const z = st.zadnje;
+  const starost = z ? Math.round((Date.now() - z.vrijeme) / 1000) : null;
+  if (!st.izvor) {
+    detalj = ograda.centar
+      ? "Pritisni „Pokreni praćenje”. Centar zone je spremljen."
+      : "Pritisni „Pokreni praćenje”. Prvo ispravno očitanje postaje centar zone.";
+  } else if (!z) {
+    detalj = "Čekam prvo GPS očitanje…";
+  } else if (st.slabSignal) {
+    detalj = `Slab signal (±${Math.round(z.tocnost)} m), očitanje preskočeno. Treba bolje od ±${MAX_NETOCNOST_M} m.`;
+  } else if (stanje === "ceka" && ograda.kandidat) {
+    detalj = `Potvrđujem položaj: ${ograda.brojac}/${ograda.potvrde} očitanja.`;
+  } else if (stanje === "izvan" && ograda.kandidat === "unutra") {
+    detalj = `Vraća se u zonu: ${ograda.brojac}/${ograda.potvrde} očitanja.`;
+  } else if (stanje === "granica") {
+    detalj = `Na granici: ${ograda.brojac}/${ograda.potvrde} očitanja izvan zone.`;
+  } else {
+    detalj = `Točnost ±${Math.round(z.tocnost)} m · zadnje očitanje ${starost <= 1 ? "upravo" : `prije ${starost} s`}`;
+  }
+  el.detalj.textContent = detalj;
+
+  el.utisaj.hidden = !(st.alarm && !st.utisan);
+  el.glavni.textContent = st.izvor ? (st.izvor === "sim" ? "Zaustavi simulaciju" : "Zaustavi praćenje") : "Pokreni praćenje";
+  el.glavni.classList.toggle("stop", !!st.izvor);
+  el.simulacija.disabled = !!st.izvor;
+  el.centarOvdje.disabled = !(st.izvor === "gps" && z && !st.slabSignal);
+
+  // Dijagram: zona uvijek stane, a točka je unutar okvira i kad je daleko.
+  const pogledM = Math.max(ograda.radijus * 1.3, (d || 0) * 1.2);
+  const px = (m) => (m / pogledM) * 140;
+  el.rZona.setAttribute("r", px(ograda.radijus));
+  el.rHist.setAttribute("r", px(Math.max(ograda.radijus - HISTEREZA_M, 0)));
+  el.rMjera.setAttribute("y", -px(ograda.radijus) - 5);
+  el.rMjera.textContent = `${ograda.radijus} m`;
+
+  if (st.izvor && z && ograda.centar) {
+    const p = pomakM(ograda.centar, z.lat, z.lon);
+    const x = px(p.x), y = -px(p.y);
+    for (const c of [el.rTocka, el.rTocnost, el.rPuls]) { c.setAttribute("cx", x); c.setAttribute("cy", y); }
+    el.rTocnost.setAttribute("r", Math.min(px(z.tocnost), 150));
+    el.rLinija.setAttribute("x2", x);
+    el.rLinija.setAttribute("y2", y);
+    el.rTocka.setAttribute("visibility", "visible");
+  } else {
+    el.rTocka.setAttribute("visibility", "hidden");
+    el.rTocnost.setAttribute("r", 0);
+    el.rLinija.setAttribute("x2", 0);
+    el.rLinija.setAttribute("y2", 0);
+  }
+
+  if (ograda.centar) {
+    const { lat, lon } = ograda.centar;
+    el.centarInfo.replaceChildren();
+    const k = document.createElement("span");
+    k.className = "mono";
+    k.textContent = `Centar ${lat.toFixed(5)}, ${lon.toFixed(5)}`;
+    const a = document.createElement("a");
+    a.href = `https://maps.google.com/?q=${lat.toFixed(6)},${lon.toFixed(6)}`;
+    a.target = "_blank";
+    a.rel = "noopener";
+    a.textContent = "Otvori kartu";
+    el.centarInfo.append(k, a);
+  } else {
+    el.centarInfo.textContent = "Centar još nije postavljen.";
+  }
+}
+setInterval(() => { if (st.izvor === "gps") prikazi(); }, 1000);
+
+// ------------------------------ Gumbi --------------------------------
+el.glavni.addEventListener("click", () => (st.izvor ? zaustavi() : pokreniGps()));
+el.simulacija.addEventListener("click", pokreniSimulaciju);
+el.utisaj.addEventListener("click", () => { st.utisan = true; zapisi("Alarm utišan. Mailovi i dalje stižu.", "info"); prikazi(); });
+el.centarOvdje.addEventListener("click", () => {
+  if (!st.zadnje) return;
+  postaviCentar(st.zadnje.lat, st.zadnje.lon, "ručno");
+  prikazi();
+});
+
+el.radijus.value = ograda.radijus;
+el.radijusIspis.textContent = `${ograda.radijus} m`;
+el.radijus.addEventListener("input", () => {
+  ograda.radijus = Number(el.radijus.value);
+  el.radijusIspis.textContent = `${ograda.radijus} m`;
+  spremi();
+  prikazi();
+});
+
+for (const k of ["email", "ejsService", "ejsTemplate", "ejsKey"]) {
+  el[k].value = spremljeno[k] || "";
+  el[k].addEventListener("change", spremi);
+}
+
+el.testMail.addEventListener("click", async () => {
+  spremi();
+  const status = (tekst, vrsta = "") => { el.mailStatus.textContent = tekst; el.mailStatus.dataset.vrsta = vrsta; };
+  if (!imaMail()) { status("Upiši ispravnu e-mail adresu.", "greska"); el.email.focus(); return; }
+  el.testMail.disabled = true;
+  status("Šaljem…");
+  try {
+    await posaljiMail("Kolica GPS: probni mail",
+      `Ako ovo čitaš, obavijesti s kolica stižu na ovu adresu.\n\nPoslano: ${new Date().toLocaleString("hr-HR")}`);
+    status("Poslano. Provjeri inbox, a ako ga nema, i mapu Spam.", "ok");
+    zapisi("Probni mail poslan.", "info");
+  } catch (e) {
+    status(e.message, "greska");
+  } finally {
+    el.testMail.disabled = false;
+  }
+});
+
+prikazi();
+</script>
+</body>
+</html>
