@@ -254,24 +254,25 @@ code { font-family: var(--font-mono); font-size: 12.5px; background: var(--bg); 
     </div>
 
     <div class="polje">
-      <label for="skripta">Adresa Google skripte</label>
-      <input type="url" id="skripta" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://script.google.com/macros/s/…/exec">
-      <p class="pomoc">Obavijesti šalje tvoj Gmail, i to tebi. Skriptu postaviš samo jednom, upute su ispod.</p>
+      <label for="email">E-mail za obavijesti</label>
+      <input type="email" id="email" inputmode="email" autocomplete="email" placeholder="ime@gmail.com">
+      <p class="pomoc">Mail šalje besplatni servis ntfy.sh, bez registracije. Prvi mail provjeri i u mapi Spam.</p>
     </div>
 
     <button type="button" id="testMail">Pošalji probni mail</button>
     <p class="mail-status" id="mailStatus" role="status"></p>
 
     <details id="upute">
-      <summary>Kako postaviti Google skriptu (jednom, oko 3 minute)</summary>
+      <summary>Ako mailovi ne stižu: slanje s vlastitog Gmaila</summary>
       <div class="polja">
+        <p class="pomoc">Mala Google skripta na tvom računu šalje mailove s tvog Gmaila na isti Gmail. Postavlja se jednom, oko 3 minute. Kad je adresa skripte upisana, mailovi idu preko nje umjesto preko ntfy.sh.</p>
         <ol>
           <li>Pritisni <strong>Kopiraj kod skripte</strong> (gumb ispod uputa).</li>
           <li>Otvori <a href="https://script.new" target="_blank" rel="noopener">script.new</a> i prijavi se Gmailom na koji želiš primati obavijesti. Na mobitelu u Chromeu uključi <em>⋮ → Verzija za računala</em>, inače se editor ne prikazuje dobro.</li>
           <li>Obriši sve što piše u editoru, zalijepi kod i spremi (ikona diskete).</li>
           <li>Gore desno <em>Deploy → New deployment</em>. Pokraj <em>Select type</em> pritisni kotačić i odaberi <em>Web app</em>. Postavi <em>Execute as: Me</em> i <em>Who has access: Anyone</em>, pa pritisni <em>Deploy</em>.</li>
           <li><em>Authorize access</em> → odaberi svoj račun. Google će napisati da aplikacija nije provjerena: pritisni <em>Advanced</em> → <em>Go to … (unsafe)</em> → <em>Allow</em>. To je tvoja vlastita skripta, a upozorenje se pojavljuje samo zato što je Google nije pregledao.</li>
-          <li>Kopiraj <em>Web app URL</em> (završava s <code>/exec</code>), zalijepi ga u polje iznad i pritisni <strong>Pošalji probni mail</strong>.</li>
+          <li>Kopiraj <em>Web app URL</em> (završava s <code>/exec</code>), zalijepi ga u polje na dnu i pritisni <strong>Pošalji probni mail</strong>.</li>
         </ol>
         <button type="button" id="kopirajKod">Kopiraj kod skripte</button>
         <pre class="kod" id="kodSkripte">
@@ -303,6 +304,11 @@ function odgovor(podaci) {
     .setMimeType(ContentService.MimeType.JSON);
 }
 </pre>
+        <div class="polje">
+          <label for="skripta">Adresa Google skripte</label>
+          <input type="url" id="skripta" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://script.google.com/macros/s/…/exec">
+          <p class="pomoc">Ostavi prazno da mailove šalje ntfy.sh.</p>
+        </div>
       </div>
     </details>
   </section>
@@ -322,7 +328,7 @@ function odgovor(podaci) {
 const HISTEREZA_M = 10;          // povratak se priznaje tek na radijus - histereza
 const BROJ_POTVRDA = 5;          // uzastopnih očitanja za promjenu stanja (~5 s)
 const MAX_NETOCNOST_M = 30;      // očitanja lošije točnosti se preskaču
-const PONAVLJANJE_MS = 5 * 60 * 1000;   // dok su kolica vani, novi mail svakih 5 min
+const PONAVLJANJE_MS = 15 * 60 * 1000;  // dok su kolica vani, novi mail svakih 15 min
 const PONOVNI_POKUSAJ_MS = 30 * 1000;   // neposlani mail pokušaj ponovno nakon 30 s
 const ZADANI_CENTAR = { lat: 45.815011, lon: 15.981919 };  // za simulaciju bez centra
 // =====================================================================
@@ -389,7 +395,9 @@ function spremi() {
     localStorage.setItem(KLJUC, JSON.stringify({
       radijus: ograda.radijus,
       centar: st.privremeniCentar ? spremljeno.centar : ograda.centar,
+      email: el.email.value.trim(),
       skripta: el.skripta.value.trim(),
+      tema: spremljeno.tema,
     }));
   } catch { /* privatni prozor — postavke vrijede samo do zatvaranja */ }
 }
@@ -399,7 +407,7 @@ const $ = (id) => document.getElementById(id);
 const el = Object.fromEntries([
   "app", "pill", "stanje", "mjera", "udaljenost", "odRadijusa", "detalj", "utisaj", "glavni", "centarOvdje",
   "simulacija", "rZona", "rHist", "rMjera", "rLinija", "rTocnost", "rPuls", "rTocka", "centarInfo",
-  "radijus", "radijusIspis", "skripta", "testMail", "mailStatus", "upute", "kopirajKod", "kodSkripte", "dnevnik",
+  "radijus", "radijusIspis", "email", "skripta", "testMail", "mailStatus", "upute", "kopirajKod", "kodSkripte", "dnevnik",
 ].map((id) => [id, $(id)]));
 
 const spremljeno = ucitajSpremljeno();
@@ -451,45 +459,75 @@ function zapisi(tekst, vrsta = "info") {
 }
 
 // ------------------------------- E-mail ------------------------------
-// Mail šalje Google skripta s korisnikova vlastitog Gmail računa (google-skripta/Code.gs).
+// Dva načina slanja:
+//  - ntfy.sh (zadano): dovoljna je e-mail adresa, bez registracije
+//  - Google skripta (google-skripta/Code.gs): šalje s korisnikova Gmaila, ako je adresa skripte upisana
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const SKRIPTA_RE = /^https:\/\/script\.google\.com\/(a\/[^/]+\/)?macros\/s\/[\w-]+\/exec\/?$/;
 
 function imaSkriptu() { return SKRIPTA_RE.test(el.skripta.value.trim()); }
+function mozeSlati() { return el.skripta.value.trim() ? imaSkriptu() : EMAIL_RE.test(el.email.value.trim()); }
 
-// Vraća adresu na koju je mail poslan.
-async function posaljiMail(naslov, poruka) {
-  const url = el.skripta.value.trim();
-  if (!SKRIPTA_RE.test(url)) {
-    throw new Error("To nije adresa Web appa. Kopiraj „Web app URL” iz Deploy → Manage deployments: " +
-      "počinje s https://script.google.com/macros/s/ i završava s /exec.");
+// Nasumična tema na ntfy.sh, ista za ovaj mobitel. Tko ne zna ime teme, ne vidi poruke.
+function ntfyTema() {
+  if (!spremljeno.tema) {
+    const b = crypto.getRandomValues(new Uint8Array(12));
+    spremljeno.tema = "kolica-" + Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
+    spremi();
   }
+  return spremljeno.tema;
+}
 
+// fetch s vremenskim ograničenjem i razumljivim porukama kad nema veze.
+async function zahtjev(url, opcije, servis) {
   const kontrola = new AbortController();
   const timer = setTimeout(() => kontrola.abort(), 25000);
   try {
-    // Obična forma umjesto JSON-a: Google skripte ne odgovaraju na CORS provjeru koju bi JSON izazvao.
-    const r = await fetch(url, { method: "POST", body: new URLSearchParams({ naslov, poruka }), signal: kontrola.signal });
-    const d = await r.json().catch(() => null);
-    if (!d) throw new Error(`Skripta nije vratila odgovor (HTTP ${r.status}). Provjeri je li objavljena kao Web app.`);
-    if (!d.ok) throw new Error(`Google nije poslao mail: ${d.greska || "nepoznata greška"}`);
-    return d.primatelj || "tvoj Gmail";
+    return await fetch(url, { ...opcije, signal: kontrola.signal });
   } catch (e) {
-    if (e.name === "AbortError") throw new Error("Google skripta se ne javlja 25 s (slab internet?).");
-    if (e instanceof TypeError) {
-      throw new Error(navigator.onLine
-        ? "Ne mogu doći do skripte. Provjeri da je objavljena s „Who has access: Anyone” i da adresa završava s /exec."
-        : "Mobitel nema internetske veze.");
-    }
-    throw e;
+    if (e.name === "AbortError") throw new Error(`${servis} se ne javlja 25 s (slab internet?).`);
+    throw new Error(navigator.onLine
+      ? `Ne mogu doći do ${servis}. Možda ga blokira blokator oglasa, privatni DNS ili VPN na mobitelu.`
+      : "Mobitel nema internetske veze.");
   } finally {
     clearTimeout(timer);
   }
 }
 
+// Vraća adresu na koju je mail poslan.
+async function posaljiMail(naslov, poruka) {
+  const skripta = el.skripta.value.trim();
+  if (skripta) {
+    if (!SKRIPTA_RE.test(skripta)) {
+      throw new Error("To nije adresa Web appa. Kopiraj „Web app URL” iz Deploy → Manage deployments: " +
+        "počinje s https://script.google.com/macros/s/ i završava s /exec.");
+    }
+    // Obična forma umjesto JSON-a: Google skripte ne odgovaraju na CORS provjeru koju bi JSON izazvao.
+    const r = await zahtjev(skripta, { method: "POST", body: new URLSearchParams({ naslov, poruka }) }, "Google skripte");
+    const d = await r.json().catch(() => null);
+    if (!d) throw new Error(`Skripta nije vratila odgovor (HTTP ${r.status}). Provjeri je li objavljena kao Web app s pristupom „Anyone”.`);
+    if (!d.ok) throw new Error(`Google nije poslao mail: ${d.greska || "nepoznata greška"}`);
+    return d.primatelj || "tvoj Gmail";
+  }
+
+  const primatelj = el.email.value.trim();
+  if (!EMAIL_RE.test(primatelj)) throw new Error("Upiši ispravnu e-mail adresu.");
+  // Postavke u adresi, poruka kao običan tekst: preglednik ne radi prethodnu CORS provjeru.
+  const url = `https://ntfy.sh/${ntfyTema()}?` + new URLSearchParams({ email: primatelj, title: naslov });
+  const r = await zahtjev(url, { method: "POST", body: poruka }, "ntfy.sh");
+  if (r.ok) return primatelj;
+  const d = await r.json().catch(() => null);
+  const razlog = (d && d.error) || `HTTP ${r.status}`;
+  if (r.status === 429) {
+    throw new Error(`ntfy.sh je privremeno ograničio broj mailova (${razlog}). Mail čeka i šalje se kasnije.`);
+  }
+  throw new Error(`ntfy.sh nije poslao mail: ${razlog}. Ako se ponavlja, postavi slanje s vlastitog Gmaila (ispod).`);
+}
+
 function obavijesti(naslov, poruka) {
   if (st.izvor === "sim") naslov = "[SIMULACIJA] " + naslov;
-  if (!imaSkriptu()) {
-    zapisi("Mail nije poslan jer u postavkama nije upisana adresa Google skripte.", "upoz");
+  if (!mozeSlati()) {
+    zapisi("Mail nije poslan jer u postavkama nema ispravne e-mail adrese.", "upoz");
     return;
   }
   st.red.push({ naslov, poruka, greska: false });
@@ -819,9 +857,11 @@ el.radijus.addEventListener("input", () => {
   prikazi();
 });
 
-el.skripta.value = spremljeno.skripta || "";
-el.skripta.addEventListener("change", spremi);
-el.upute.open = !imaSkriptu();
+for (const k of ["email", "skripta"]) {
+  el[k].value = spremljeno[k] || "";
+  el[k].addEventListener("change", spremi);
+}
+el.upute.open = !!el.skripta.value.trim();
 
 el.kopirajKod.addEventListener("click", async () => {
   try {
@@ -840,10 +880,9 @@ el.kopirajKod.addEventListener("click", async () => {
 el.testMail.addEventListener("click", async () => {
   spremi();
   const status = (tekst, vrsta = "") => { el.mailStatus.textContent = tekst; el.mailStatus.dataset.vrsta = vrsta; };
-  if (!el.skripta.value.trim()) {
-    status("Upiši adresu Google skripte. Upute su ispod.", "greska");
-    el.upute.open = true;
-    el.skripta.focus();
+  if (!el.skripta.value.trim() && !el.email.value.trim()) {
+    status("Upiši svoju e-mail adresu.", "greska");
+    el.email.focus();
     return;
   }
   el.testMail.disabled = true;
